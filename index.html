@@ -175,6 +175,35 @@
       font-size: 19px;
     }
 
+    .wrong-book-button {
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      border: 1px solid #bfd5cb;
+      border-radius: 5px;
+      background: #edf6f1;
+      color: var(--felt-deep);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .wrong-book-button:hover { border-color: var(--felt); background: #e5f1eb; }
+
+    .wrong-count {
+      min-width: 20px;
+      height: 20px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--coral);
+      color: #ffffff;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 11px;
+    }
+
     .workspace {
       width: min(1500px, 100%);
       min-height: calc(100vh - 68px);
@@ -660,6 +689,28 @@
       font-size: 13px;
     }
 
+    .feedback-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .feedback-actions[hidden] { display: none; }
+
+    .save-wrong-button {
+      min-height: 44px;
+      border: 1px solid #c9d7d1;
+      border-radius: 5px;
+      background: #eef5f1;
+      color: var(--felt-deep);
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .save-wrong-button:hover { border-color: var(--felt); background: #e3efe9; }
+    .save-wrong-button.is-saved { border-color: #e7c5bf; background: #fff1ee; color: var(--coral-deep); }
+
     .concept-tags {
       display: flex;
       flex-wrap: wrap;
@@ -679,7 +730,6 @@
     .next-button {
       width: 100%;
       min-height: 44px;
-      margin-top: 16px;
       border: 0;
       border-radius: 5px;
       background: var(--felt);
@@ -689,6 +739,143 @@
     }
 
     .next-button:hover { background: var(--felt-deep); }
+
+    .wrong-dialog {
+      width: min(720px, calc(100vw - 28px));
+      max-height: min(760px, calc(100vh - 36px));
+      margin: auto;
+      padding: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f7faf8;
+      color: var(--ink);
+      box-shadow: 0 28px 70px rgba(10, 36, 25, .28);
+    }
+
+    .wrong-dialog::backdrop { background: rgba(10, 29, 21, .56); }
+
+    .wrong-dialog-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 22px 24px 17px;
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+    }
+
+    .wrong-dialog-title {
+      margin: 0;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 25px;
+      line-height: 1.1;
+    }
+
+    .wrong-dialog-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dialog-close {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: #ffffff;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 19px;
+      line-height: 1;
+    }
+
+    .dialog-close:hover { border-color: var(--coral); color: var(--coral-deep); }
+
+    .wrong-list {
+      max-height: min(520px, calc(100vh - 220px));
+      overflow: auto;
+      padding: 16px 24px 22px;
+    }
+
+    .wrong-list:empty::before {
+      content: "还没有错题。先完成一手练习，偏离基线的题目会自动出现在这里。";
+      display: block;
+      padding: 42px 15px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .wrong-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      padding: 15px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .wrong-item:last-child { border-bottom: 0; }
+
+    .wrong-item-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 5px;
+    }
+
+    .wrong-item-stage,
+    .wrong-item-status {
+      padding: 3px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .wrong-item-stage { background: #e6f1eb; color: var(--felt-deep); }
+    .wrong-item-status { background: #fff0ec; color: var(--coral-deep); }
+
+    .wrong-item-title { margin: 0; font-size: 15px; font-weight: 700; }
+    .wrong-item-detail { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+
+    .wrong-item-actions { display: flex; align-items: center; gap: 6px; }
+
+    .wrong-item-actions button {
+      min-height: 34px;
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #ffffff;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .wrong-item-actions button:hover { border-color: var(--felt); color: var(--felt-deep); }
+    .wrong-item-actions .remove-wrong { color: var(--coral-deep); }
+
+    .wrong-dialog-footer {
+      display: flex;
+      justify-content: flex-end;
+      padding: 12px 24px;
+      border-top: 1px solid var(--line);
+      background: #ffffff;
+    }
+
+    .clear-wrong-button {
+      min-height: 34px;
+      border: 0;
+      background: transparent;
+      color: var(--coral-deep);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .clear-wrong-button:hover { text-decoration: underline; }
 
     .toast {
       position: fixed;
@@ -750,6 +937,7 @@
       .table-wrap { width: min(660px, 96%); }
       .rail-right { padding-bottom: 28px; }
       .mobile-score { display: inline; color: var(--muted); font-size: 12px; }
+      .wrong-book-button { padding-inline: 8px; }
     }
 
     @media (max-width: 520px) {
@@ -773,6 +961,13 @@
       .fact { grid-template-columns: 70px 1fr; }
       .table-stage::before, .table-stage::after { font-size: 140px; }
       .seat::before { left: calc(50% - 53px); width: 27px; height: 27px; }
+      .feedback-actions { grid-template-columns: 1fr; }
+      .wrong-dialog-header { padding: 18px 17px 14px; }
+      .wrong-dialog-title { font-size: 22px; }
+      .wrong-list { padding-inline: 17px; }
+      .wrong-dialog-footer { padding-inline: 17px; }
+      .wrong-item { grid-template-columns: 1fr; gap: 10px; }
+      .wrong-item-actions { justify-content: flex-start; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -808,6 +1003,7 @@
     <div class="scoreboard">
       <div class="score-item"><span class="score-label">本轮</span><strong class="score-value" id="session-count">0 / 10</strong></div>
       <div class="score-item"><span class="score-label">准确率</span><strong class="score-value" id="accuracy">—</strong></div>
+      <button class="wrong-book-button" type="button" id="wrong-book-button" title="打开错题本" aria-label="打开错题本">错题本 <span class="wrong-count" id="wrong-count">0</span></button>
       <button class="icon-button" type="button" id="share-button" title="分享训练器" aria-label="分享训练器">↗</button>
       <button class="icon-button" type="button" id="reset-button" title="重置成绩" aria-label="重置成绩">↻</button>
     </div>
@@ -869,12 +1065,29 @@
         <p class="feedback-result" id="feedback-result"><span class="result-dot"></span><span id="feedback-title"></span></p>
         <p class="feedback-copy" id="feedback-copy"></p>
         <div class="concept-tags" id="concept-tags"></div>
-        <button class="next-button" type="button" id="next-button">下一手 →</button>
+        <div class="feedback-actions">
+          <button class="save-wrong-button" type="button" id="save-wrong-button" hidden>加入错题本</button>
+          <button class="next-button" type="button" id="next-button">下一手 →</button>
+        </div>
       </section>
     </aside>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog class="wrong-dialog" id="wrong-dialog" aria-labelledby="wrong-dialog-title">
+    <header class="wrong-dialog-header">
+      <div>
+        <h2 class="wrong-dialog-title" id="wrong-dialog-title">错题本</h2>
+        <p class="wrong-dialog-subtitle">偏离基线和可混合的题目会自动收录，数据只保存在本机浏览器。</p>
+      </div>
+      <button class="dialog-close" type="button" id="close-wrong-dialog" aria-label="关闭错题本">×</button>
+    </header>
+    <div class="wrong-list" id="wrong-list"></div>
+    <footer class="wrong-dialog-footer">
+      <button class="clear-wrong-button" type="button" id="clear-wrong-button">清空错题本</button>
+    </footer>
+  </dialog>
 
   <script>
     const ACTION_COLORS = {
@@ -1052,9 +1265,12 @@
       current: null,
       previousId: null,
       answered: false,
+      lastEarned: null,
+      lastAction: null,
       sessionAnswered: 0,
       sessionScore: 0,
-      history: loadHistory()
+      history: loadHistory(),
+      wrongBank: loadWrongBank()
     };
 
     const elements = Object.fromEntries([
@@ -1063,7 +1279,9 @@
       "villain-seat-meta", "hero-chip", "hero-seat-meta", "hole-cards", "dealer-button",
       "decision-heading", "decision-subtitle", "answers", "feedback", "feedback-result",
       "feedback-title", "feedback-copy", "concept-tags", "next-button", "session-count",
-      "accuracy", "mobile-score", "mode-switch", "reset-button", "share-button", "table-wrap", "toast"
+      "accuracy", "mobile-score", "mode-switch", "reset-button", "share-button", "table-wrap", "toast",
+      "wrong-book-button", "wrong-count", "save-wrong-button", "wrong-dialog", "close-wrong-dialog",
+      "wrong-list", "clear-wrong-button"
     ].map(id => [id, document.getElementById(id)]));
 
     function loadHistory() {
@@ -1074,8 +1292,21 @@
       }
     }
 
+    function loadWrongBank() {
+      try {
+        const stored = JSON.parse(localStorage.getItem("poker-lab-wrong-questions"));
+        return Array.isArray(stored) ? stored : [];
+      } catch {
+        return [];
+      }
+    }
+
     function saveHistory() {
       localStorage.setItem("poker-lab-history", JSON.stringify(state.history));
+    }
+
+    function saveWrongBank() {
+      localStorage.setItem("poker-lab-wrong-questions", JSON.stringify(state.wrongBank));
     }
 
     function cardNode(card) {
@@ -1101,6 +1332,108 @@
       elements.accuracy.textContent = sessionAccuracy === null ? "—" : `${sessionAccuracy}%`;
       elements["mobile-score"].textContent = sessionAccuracy === null ? "· 0 / 10" : `· ${sessionAccuracy}% · ${state.sessionAnswered}/10`;
       document.querySelector(".rail-right").style.setProperty("--session-progress", `${state.sessionAnswered * 10}%`);
+      renderWrongCount();
+    }
+
+    function renderWrongCount() {
+      elements["wrong-count"].textContent = String(state.wrongBank.length);
+    }
+
+    function currentWrongRecord() {
+      return state.current ? state.wrongBank.find(record => record.id === state.current.id) : null;
+    }
+
+    function syncSaveWrongButton() {
+      const button = elements["save-wrong-button"];
+      const saved = Boolean(currentWrongRecord());
+      button.classList.toggle("is-saved", saved);
+      button.textContent = saved ? "从错题本移除" : "加入错题本";
+    }
+
+    function saveCurrentWrong() {
+      if (!state.current || state.lastEarned === 1) return;
+      const existing = currentWrongRecord();
+      const record = {
+        id: state.current.id,
+        action: state.lastAction,
+        earned: state.lastEarned,
+        savedAt: new Date().toISOString()
+      };
+      if (existing) Object.assign(existing, record);
+      else state.wrongBank.unshift(record);
+      saveWrongBank();
+      renderWrongCount();
+      syncSaveWrongButton();
+      renderWrongList();
+    }
+
+    function removeWrong(id) {
+      state.wrongBank = state.wrongBank.filter(record => record.id !== id);
+      saveWrongBank();
+      renderWrongCount();
+      syncSaveWrongButton();
+      renderWrongList();
+    }
+
+    function renderWrongList() {
+      const items = state.wrongBank
+        .map(record => ({ record, scenario: SCENARIOS.find(item => item.id === record.id) }))
+        .filter(item => item.scenario);
+
+      elements["wrong-list"].replaceChildren(...items.map(({ record, scenario }) => {
+        const article = document.createElement("article");
+        article.className = "wrong-item";
+
+        const content = document.createElement("div");
+        const meta = document.createElement("div");
+        meta.className = "wrong-item-meta";
+        const stage = document.createElement("span");
+        stage.className = "wrong-item-stage";
+        stage.textContent = scenario.stage === "preflop" ? "翻前" : "翻后";
+        const status = document.createElement("span");
+        status.className = "wrong-item-status";
+        status.textContent = record.earned === 0.5 ? "可混合" : "偏离基线";
+        meta.append(stage, status);
+
+        const title = document.createElement("h3");
+        title.className = "wrong-item-title";
+        title.textContent = scenario.prompt;
+        const detail = document.createElement("p");
+        detail.className = "wrong-item-detail";
+        detail.textContent = `${scenario.title} · 手牌 ${scenario.hand.join(" ")} · 你选了：${record.action}`;
+        content.append(meta, title, detail);
+
+        const actions = document.createElement("div");
+        actions.className = "wrong-item-actions";
+        const review = document.createElement("button");
+        review.type = "button";
+        review.dataset.reviewWrong = scenario.id;
+        review.textContent = "再练一遍";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "remove-wrong";
+        remove.dataset.removeWrong = scenario.id;
+        remove.textContent = "移除";
+        actions.append(review, remove);
+        article.append(content, actions);
+        return article;
+      }));
+    }
+
+    function openWrongBook() {
+      renderWrongList();
+      if (!elements["wrong-dialog"].open) elements["wrong-dialog"].showModal();
+    }
+
+    function reviewWrong(id) {
+      const scenario = SCENARIOS.find(item => item.id === id);
+      if (!scenario) return;
+      state.previousId = null;
+      state.current = scenario;
+      state.answered = false;
+      elements["wrong-dialog"].close();
+      renderScenario();
+      renderScore();
     }
 
     let toastTimer;
@@ -1157,6 +1490,9 @@
       elements["decision-heading"].textContent = item.prompt;
       elements["decision-subtitle"].textContent = "选择最接近基线的行动。提交后显示混合频率。";
       elements.feedback.hidden = true;
+      elements["save-wrong-button"].hidden = true;
+      state.lastEarned = null;
+      state.lastAction = null;
       elements.answers.replaceChildren(...item.answers.map(([name, frequency]) => answerNode(name, frequency)));
       playDealAnimation();
     }
@@ -1200,6 +1536,8 @@
       const frequency = Number(button.dataset.frequency);
       const maxFrequency = Math.max(...state.current.answers.map(answerItem => answerItem[1]));
       const earned = scoreAnswer(frequency, maxFrequency);
+      state.lastEarned = earned;
+      state.lastAction = button.dataset.action;
       state.sessionAnswered += 1;
       state.sessionScore += earned;
       state.history.answered += 1;
@@ -1225,6 +1563,9 @@
         span.textContent = tag;
         return span;
       }));
+      elements["save-wrong-button"].hidden = earned === 1;
+      if (earned < 1) saveCurrentWrong();
+      syncSaveWrongButton();
       elements.feedback.hidden = false;
       renderScore();
 
@@ -1254,6 +1595,29 @@
 
     elements["next-button"].addEventListener("click", nextScenario);
     elements["share-button"].addEventListener("click", shareTrainer);
+    elements["wrong-book-button"].addEventListener("click", openWrongBook);
+    elements["close-wrong-dialog"].addEventListener("click", () => elements["wrong-dialog"].close());
+    elements["save-wrong-button"].addEventListener("click", () => {
+      if (currentWrongRecord()) removeWrong(state.current.id);
+      else saveCurrentWrong();
+    });
+
+    elements["wrong-list"].addEventListener("click", event => {
+      const review = event.target.closest("button[data-review-wrong]");
+      if (review) reviewWrong(review.dataset.reviewWrong);
+      const remove = event.target.closest("button[data-remove-wrong]");
+      if (remove) removeWrong(remove.dataset.removeWrong);
+    });
+
+    elements["clear-wrong-button"].addEventListener("click", () => {
+      if (!state.wrongBank.length) return;
+      if (!window.confirm("确定清空全部错题吗？")) return;
+      state.wrongBank = [];
+      saveWrongBank();
+      renderWrongCount();
+      syncSaveWrongButton();
+      renderWrongList();
+    });
 
     elements["mode-switch"].addEventListener("click", event => {
       const button = event.target.closest("button[data-mode]");
