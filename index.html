@@ -1,0 +1,1290 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POKER LAB · GTO 决策训练</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #e8ece9;
+      --paper: #f8faf8;
+      --paper-strong: #ffffff;
+      --ink: #17211d;
+      --muted: #64716b;
+      --line: #d2dad6;
+      --felt: #145f47;
+      --felt-deep: #0b3c2d;
+      --felt-light: #2a8064;
+      --coral: #d95d48;
+      --coral-deep: #ab3f31;
+      --blue: #3f75a5;
+      --gold: #d5a934;
+      --fold: #89938e;
+      --success: #20845d;
+      --danger: #b53f35;
+      --shadow: 0 16px 34px rgba(24, 43, 35, 0.13);
+      --radius: 7px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #dfe5e1;
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      letter-spacing: 0;
+    }
+
+    button, select { font: inherit; letter-spacing: 0; }
+
+    button:focus-visible,
+    select:focus-visible {
+      outline: 3px solid rgba(49, 112, 201, 0.34);
+      outline-offset: 2px;
+    }
+
+    button { -webkit-tap-highlight-color: transparent; }
+
+    .topbar {
+      position: relative;
+      z-index: 10;
+      min-height: 72px;
+      display: grid;
+      grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr);
+      align-items: center;
+      gap: 20px;
+      padding: 10px 22px;
+      background: rgba(255, 255, 255, .96);
+      border-bottom: 1px solid var(--line);
+      border-top: 3px solid var(--felt-deep);
+      box-shadow: 0 4px 18px rgba(24, 43, 35, .07);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 38px;
+      height: 38px;
+      flex: 0 0 auto;
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 50%;
+      background: var(--felt-deep);
+      box-shadow: 0 5px 12px rgba(11, 60, 45, .2);
+    }
+
+    .brand-mark::before {
+      content: "♠";
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #ffffff;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .brand-name {
+      margin: 0;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1.05;
+    }
+
+    .brand-subtitle {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .mode-switch {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(72px, 1fr));
+      gap: 3px;
+      padding: 4px;
+      background: #edf1ef;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .mode-switch button {
+      min-height: 34px;
+      padding: 5px 13px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .mode-switch button[aria-pressed="true"] {
+      background: var(--paper-strong);
+      color: var(--ink);
+      box-shadow: 0 1px 4px rgba(17, 35, 27, 0.1);
+      font-weight: 600;
+    }
+
+    .scoreboard {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .score-item { text-align: right; }
+
+    .score-label {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+
+    .score-value {
+      display: block;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 20px;
+      line-height: 1.05;
+    }
+
+    .icon-button {
+      width: 36px;
+      height: 36px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: var(--paper-strong);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 19px;
+    }
+
+    .workspace {
+      width: min(1500px, 100%);
+      min-height: calc(100vh - 68px);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 260px minmax(500px, 1fr) 340px;
+      background: var(--paper);
+      box-shadow: 0 0 38px rgba(25, 46, 37, .1);
+    }
+
+    .rail {
+      padding: 22px;
+      background: #f1f4f2;
+    }
+
+    .rail-left {
+      border-right: 1px solid var(--line);
+      background: #fbfcfb;
+    }
+
+    .rail-right {
+      position: relative;
+      border-left: 1px solid var(--line);
+      background: #f5f7f6;
+    }
+
+    .rail-right::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: var(--session-progress, 0%);
+      height: 4px;
+      background: var(--coral);
+      transition: width 260ms ease;
+    }
+
+    .rail-left > .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      margin-bottom: 14px;
+      padding: 3px 8px;
+      border: 1px solid #bfd5cb;
+      border-radius: 3px;
+      background: #e8f2ed;
+      color: var(--felt-deep);
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .spot-title {
+      margin: 0;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 26px;
+      font-weight: 600;
+      line-height: 1.1;
+    }
+
+    .spot-subtitle {
+      margin: 7px 0 22px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .facts {
+      margin: 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .fact {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 10px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .fact dt { color: var(--muted); }
+    .fact dd { margin: 0; text-align: right; font-weight: 600; }
+
+    .line-title {
+      margin: 24px 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .action-line {
+      margin: 0;
+      padding: 10px 11px;
+      border-left: 4px solid var(--coral);
+      background: #f4f6f5;
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .table-stage {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      padding: 34px 28px;
+      overflow: hidden;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.24) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.24) 1px, transparent 1px),
+        radial-gradient(circle at 50% 43%, #edf2ef 0, #d9e1dc 72%);
+      background-size: 28px 28px;
+    }
+
+    .table-stage::before,
+    .table-stage::after {
+      position: absolute;
+      color: rgba(20, 95, 71, .055);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(150px, 20vw, 300px);
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .table-stage::before { content: "♠"; left: -3%; top: 4%; transform: rotate(-10deg); }
+    .table-stage::after { content: "♥"; right: -2%; bottom: 0; color: rgba(217, 93, 72, .05); transform: rotate(9deg); }
+
+    .table-wrap {
+      position: relative;
+      z-index: 1;
+      width: min(690px, 94%);
+      aspect-ratio: 1.7 / 1;
+    }
+
+    .poker-table {
+      position: absolute;
+      inset: 9% 6%;
+      display: grid;
+      place-items: center;
+      border: 13px solid #26332e;
+      outline: 3px solid rgba(185, 139, 71, .55);
+      outline-offset: -9px;
+      border-radius: 46% / 50%;
+      background:
+        radial-gradient(circle at 48% 42%, rgba(255,255,255,.08), transparent 30%),
+        repeating-linear-gradient(118deg, transparent 0 9px, rgba(255,255,255,.018) 10px 11px),
+        var(--felt);
+      box-shadow:
+        inset 0 0 0 3px rgba(255,255,255,.1),
+        inset 0 -22px 38px rgba(0,0,0,.14),
+        0 24px 38px rgba(21, 47, 37, .2),
+        0 6px 0 #14211c;
+    }
+
+    .pot-zone {
+      display: grid;
+      justify-items: center;
+      gap: 7px;
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .pot-chips {
+      height: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-left: 8px;
+    }
+
+    .pot-chip {
+      width: 14px;
+      height: 14px;
+      margin-left: -5px;
+      border: 2px dashed rgba(255, 255, 255, .82);
+      border-radius: 50%;
+      background: var(--chip-color, var(--coral));
+      box-shadow: 0 2px 3px rgba(0, 0, 0, .25);
+    }
+
+    .board {
+      min-height: 74px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    .playing-card {
+      width: 48px;
+      height: 68px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(0,0,0,.12);
+      border-radius: 5px;
+      background: #ffffff;
+      box-shadow: 0 3px 7px rgba(0,0,0,.22);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .playing-card.red { color: #c13f38; }
+    .playing-card.black { color: #1d2823; }
+
+    .pot-label {
+      padding: 4px 9px;
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 999px;
+      background: rgba(5,36,26,.32);
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 12px;
+    }
+
+    .seat {
+      position: absolute;
+      min-width: 92px;
+      text-align: center;
+      transform: translate(-50%, -50%);
+    }
+
+    .seat::before {
+      content: "V";
+      position: absolute;
+      left: calc(50% - 58px);
+      top: -2px;
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      background: var(--blue);
+      color: #ffffff;
+      font-family: "Bahnschrift", sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: 0 3px 8px rgba(0, 0, 0, .2);
+    }
+
+    .seat.hero::before { content: "H"; background: var(--coral); }
+
+    .seat-villain { left: 50%; top: 4%; }
+    .seat-hero { left: 50%; top: 96%; }
+
+    .seat-chip {
+      display: inline-block;
+      min-width: 72px;
+      padding: 5px 9px;
+      border-radius: 4px;
+      background: #24322c;
+      color: white;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 12px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      box-shadow: 0 4px 9px rgba(0,0,0,.2);
+    }
+
+    .seat.hero .seat-chip { background: var(--coral-deep); }
+
+    .seat-meta {
+      display: block;
+      margin-top: 4px;
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .hole-cards {
+      position: absolute;
+      left: calc(50% + 64px);
+      top: 78%;
+      display: flex;
+      transform: translate(-50%, -50%) rotate(-3deg);
+    }
+
+    .hole-cards .playing-card {
+      width: 46px;
+      height: 64px;
+      margin-left: -10px;
+    }
+
+    .dealer-button {
+      position: absolute;
+      width: 27px;
+      height: 27px;
+      display: grid;
+      place-items: center;
+      left: 65%;
+      top: 71%;
+      border: 2px solid #c5ccc8;
+      border-radius: 50%;
+      background: white;
+      color: var(--ink);
+      font-family: "Bahnschrift", sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: 0 2px 5px rgba(0,0,0,.16);
+    }
+
+    .dealer-button[data-seat="villain"] { left: 35%; top: 24%; }
+
+    .decision-heading {
+      margin: 0 0 4px;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 24px;
+      font-weight: 600;
+      line-height: 1.15;
+    }
+
+    .decision-heading::after {
+      content: "";
+      display: block;
+      width: 42px;
+      height: 3px;
+      margin-top: 12px;
+      background: var(--coral);
+    }
+
+    .decision-subtitle {
+      min-height: 42px;
+      margin: 0 0 17px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .answers {
+      display: grid;
+      gap: 8px;
+    }
+
+    .answer-button {
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 13px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--action-color, var(--muted));
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, .92);
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+      transition: transform 130ms ease, border-color 130ms ease, box-shadow 130ms ease;
+    }
+
+    .answer-button:hover:not(:disabled) {
+      transform: translateX(3px);
+      border-color: var(--action-color, var(--muted));
+      box-shadow: 0 4px 12px rgba(30, 49, 41, .08);
+    }
+
+    .answer-button:disabled { cursor: default; }
+    .answer-button.selected { background: #f0f3f1; }
+    .answer-button.best { border-color: var(--success); box-shadow: inset 0 0 0 1px var(--success); }
+    .answer-button.missed { border-color: var(--danger); }
+
+    .answer-name { font-weight: 700; }
+
+    .answer-frequency {
+      min-width: 38px;
+      color: var(--muted);
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      text-align: right;
+    }
+
+    .answer-button:not(.revealed) .answer-frequency { visibility: hidden; }
+
+    .answers.is-entering .answer-button {
+      animation: answer-in 320ms cubic-bezier(.2, .75, .25, 1) both;
+    }
+
+    .answers.is-entering .answer-button:nth-child(2) { animation-delay: 55ms; }
+    .answers.is-entering .answer-button:nth-child(3) { animation-delay: 110ms; }
+
+    .table-wrap.is-dealing .poker-table {
+      animation: table-settle 650ms cubic-bezier(.2, .75, .25, 1) both;
+    }
+
+    .table-wrap.is-dealing .board .playing-card {
+      animation: board-deal 520ms cubic-bezier(.18, .8, .25, 1.08) both;
+    }
+
+    .table-wrap.is-dealing .board .playing-card:nth-child(2) { animation-delay: 70ms; }
+    .table-wrap.is-dealing .board .playing-card:nth-child(3) { animation-delay: 140ms; }
+    .table-wrap.is-dealing .board .playing-card:nth-child(4) { animation-delay: 210ms; }
+    .table-wrap.is-dealing .board .playing-card:nth-child(5) { animation-delay: 280ms; }
+
+    .table-wrap.is-dealing .hole-cards .playing-card {
+      animation: hole-deal 560ms cubic-bezier(.18, .8, .25, 1.08) both;
+      animation-delay: 150ms;
+    }
+
+    .table-wrap.is-dealing .hole-cards .playing-card:nth-child(2) { animation-delay: 235ms; }
+
+    .table-wrap.is-dealing .pot-chip {
+      animation: chip-drop 430ms cubic-bezier(.2, .9, .25, 1.25) both;
+      animation-delay: 350ms;
+    }
+
+    .table-wrap.is-dealing .pot-chip:nth-child(2) { animation-delay: 405ms; }
+    .table-wrap.is-dealing .pot-chip:nth-child(3) { animation-delay: 460ms; }
+
+    .table-wrap.is-dealing .pot-label { animation: pot-pop 340ms ease-out 480ms both; }
+
+    @keyframes table-settle {
+      0% { filter: brightness(.9); transform: scale(.985); }
+      100% { filter: brightness(1); transform: scale(1); }
+    }
+
+    @keyframes board-deal {
+      0% { opacity: 0; transform: translate(42px, -54px) rotate(9deg) scale(.82); }
+      72% { opacity: 1; transform: translate(-2px, 2px) rotate(-1deg) scale(1.02); }
+      100% { opacity: 1; transform: none; }
+    }
+
+    @keyframes hole-deal {
+      0% { opacity: 0; transform: translate(62px, -86px) rotate(12deg) scale(.78); }
+      76% { opacity: 1; transform: translate(-2px, 2px) rotate(-2deg) scale(1.03); }
+      100% { opacity: 1; transform: none; }
+    }
+
+    @keyframes chip-drop {
+      0% { opacity: 0; transform: translateY(-24px) scale(.7); }
+      75% { opacity: 1; transform: translateY(2px) scale(1.08); }
+      100% { opacity: 1; transform: none; }
+    }
+
+    @keyframes pot-pop {
+      0% { opacity: 0; transform: scale(.82); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes answer-in {
+      0% { opacity: 0; transform: translateX(14px); }
+      100% { opacity: 1; transform: none; }
+    }
+
+    @keyframes feedback-in {
+      0% { opacity: 0; transform: translateY(9px); }
+      100% { opacity: 1; transform: none; }
+    }
+
+    .feedback {
+      margin-top: 18px;
+      padding-top: 17px;
+      border-top: 1px solid var(--line);
+    }
+
+    .feedback[hidden] { display: none; }
+
+    .feedback:not([hidden]) { animation: feedback-in 300ms ease-out both; }
+
+    .feedback-result {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0 0 8px;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 19px;
+      font-weight: 600;
+    }
+
+    .result-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .feedback-result.partial .result-dot { background: var(--gold); }
+    .feedback-result.wrong .result-dot { background: var(--danger); }
+
+    .feedback-copy {
+      margin: 0;
+      color: #3e4a45;
+      font-size: 13px;
+    }
+
+    .concept-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 12px 0 0;
+    }
+
+    .concept-tag {
+      padding: 3px 7px;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      background: var(--paper-strong);
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .next-button {
+      width: 100%;
+      min-height: 44px;
+      margin-top: 16px;
+      border: 0;
+      border-radius: 5px;
+      background: var(--felt);
+      color: white;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .next-button:hover { background: var(--felt-deep); }
+
+    .toast {
+      position: fixed;
+      z-index: 50;
+      left: 50%;
+      bottom: 24px;
+      max-width: min(420px, calc(100vw - 28px));
+      padding: 11px 15px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 5px;
+      background: #17231e;
+      color: #ffffff;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
+      font-size: 12px;
+      transform: translate(-50%, 18px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+    .data-note {
+      margin: 22px 0 0;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .mobile-score { display: none; }
+
+    @media (max-width: 1080px) {
+      .workspace { grid-template-columns: 220px minmax(430px, 1fr) 300px; }
+      .rail { padding: 18px; }
+      .table-stage { padding-inline: 15px; }
+      .playing-card { width: 42px; height: 60px; font-size: 21px; }
+    }
+
+    @media (max-width: 840px) {
+      .topbar {
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 10px 14px;
+      }
+
+      .mode-switch { grid-column: 1 / -1; grid-row: 2; }
+      .scoreboard .score-item { display: none; }
+      .workspace { display: flex; flex-direction: column; }
+      .rail-left { border-right: 0; border-bottom: 1px solid var(--line); }
+      .rail-right { border-left: 0; border-top: 1px solid var(--line); }
+      .rail { padding: 17px; }
+      .spot-subtitle { margin-bottom: 13px; }
+      .facts { display: grid; grid-template-columns: 1fr 1fr; }
+      .fact:nth-child(odd) { padding-right: 12px; }
+      .fact:nth-child(even) { padding-left: 12px; border-left: 1px solid var(--line); }
+      .line-title { margin-top: 16px; }
+      .table-stage { min-height: 380px; padding: 28px 10px; }
+      .table-wrap { width: min(660px, 96%); }
+      .rail-right { padding-bottom: 28px; }
+      .mobile-score { display: inline; color: var(--muted); font-size: 12px; }
+    }
+
+    @media (max-width: 520px) {
+      .brand-subtitle { display: none; }
+      .brand-name { font-size: 18px; }
+      .brand-mark { width: 34px; height: 34px; }
+      .mode-switch { grid-template-columns: repeat(3, 1fr); }
+      .mode-switch button { padding-inline: 6px; }
+      .spot-title { font-size: 23px; }
+      .table-stage { min-height: 330px; }
+      .table-wrap { width: 100%; }
+      .poker-table { inset: 11% 2%; border-width: 10px; }
+      .seat-villain { top: 7%; }
+      .seat-hero { top: 93%; }
+      .hole-cards { left: calc(50% + 65px); top: 64%; }
+      .hole-cards .playing-card { width: 38px; height: 54px; font-size: 18px; }
+      .board { gap: 4px; }
+      .board .playing-card { width: 34px; height: 49px; font-size: 18px; }
+      .dealer-button { left: 83%; top: 70%; }
+      .dealer-button[data-seat="villain"] { left: 28%; top: 29%; }
+      .fact { grid-template-columns: 70px 1fr; }
+      .table-stage::before, .table-stage::after { font-size: 140px; }
+      .seat::before { left: calc(50% - 53px); width: 27px; height: 27px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .answer-button { transition: none; }
+
+      .table-wrap.is-dealing *,
+      .answers.is-entering .answer-button,
+      .feedback:not([hidden]) {
+        animation: none !important;
+      }
+
+      .rail-right::before,
+      .toast { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1 class="brand-name">POKER LAB</h1>
+        <p class="brand-subtitle">GTO 决策训练台</p>
+      </div>
+    </div>
+
+    <nav class="mode-switch" aria-label="训练模式" id="mode-switch">
+      <button type="button" data-mode="mixed" aria-pressed="true">混合</button>
+      <button type="button" data-mode="preflop" aria-pressed="false">翻前</button>
+      <button type="button" data-mode="postflop" aria-pressed="false">翻后</button>
+    </nav>
+
+    <div class="scoreboard">
+      <div class="score-item"><span class="score-label">本轮</span><strong class="score-value" id="session-count">0 / 10</strong></div>
+      <div class="score-item"><span class="score-label">准确率</span><strong class="score-value" id="accuracy">—</strong></div>
+      <button class="icon-button" type="button" id="share-button" title="分享训练器" aria-label="分享训练器">↗</button>
+      <button class="icon-button" type="button" id="reset-button" title="重置成绩" aria-label="重置成绩">↻</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="rail rail-left" aria-labelledby="spot-title">
+      <p class="eyebrow" id="spot-kind">翻前 · 单加注底池</p>
+      <h2 class="spot-title" id="spot-title">BTN 对 BB</h2>
+      <p class="spot-subtitle" id="spot-subtitle">6 人现金桌 · 100BB · Chip EV</p>
+
+      <dl class="facts">
+        <div class="fact"><dt>你的位置</dt><dd id="hero-position">BTN</dd></div>
+        <div class="fact"><dt>对手位置</dt><dd id="villain-position">BB</dd></div>
+        <div class="fact"><dt>有效筹码</dt><dd id="effective-stack">100BB</dd></div>
+        <div class="fact"><dt>底池</dt><dd id="pot-size">1.5BB</dd></div>
+      </dl>
+
+      <p class="line-title">行动线</p>
+      <p class="action-line" id="action-line">前位弃牌到你</p>
+      <p class="data-note">教学频率基于常见 6-max、无前注、Chip EV 模型做简化。它用于练习决策结构，不是指定抽水与下注树的 Solver 输出。</p>
+    </aside>
+
+    <section class="table-stage" aria-label="牌桌题面">
+      <div class="table-wrap" id="table-wrap">
+        <div class="poker-table">
+          <div class="pot-zone">
+            <div class="board" id="board" aria-label="公共牌"></div>
+            <div class="pot-chips" id="pot-chips" aria-hidden="true">
+              <span class="pot-chip" style="--chip-color:#d95d48"></span>
+              <span class="pot-chip" style="--chip-color:#d5a934"></span>
+              <span class="pot-chip" style="--chip-color:#3f75a5"></span>
+            </div>
+            <span class="pot-label" id="pot-label">底池 1.5BB</span>
+          </div>
+        </div>
+
+        <div class="seat seat-villain">
+          <span class="seat-chip" id="villain-chip">VILLAIN · 100BB</span>
+          <span class="seat-meta" id="villain-seat-meta">BB</span>
+        </div>
+        <div class="seat seat-hero hero">
+          <span class="seat-chip" id="hero-chip">YOU · 100BB</span>
+          <span class="seat-meta" id="hero-seat-meta">BTN</span>
+        </div>
+        <div class="hole-cards" id="hole-cards" aria-label="你的手牌"></div>
+        <span class="dealer-button" id="dealer-button" aria-label="庄家按钮">D</span>
+      </div>
+    </section>
+
+    <aside class="rail rail-right" aria-labelledby="decision-heading">
+      <p class="eyebrow">你的决策 <span class="mobile-score" id="mobile-score"></span></p>
+      <h2 class="decision-heading" id="decision-heading">你会怎么做？</h2>
+      <p class="decision-subtitle" id="decision-subtitle">选择最接近基线的行动。提交后显示混合频率。</p>
+
+      <div class="answers" id="answers"></div>
+
+      <section class="feedback" id="feedback" aria-live="polite" hidden>
+        <p class="feedback-result" id="feedback-result"><span class="result-dot"></span><span id="feedback-title"></span></p>
+        <p class="feedback-copy" id="feedback-copy"></p>
+        <div class="concept-tags" id="concept-tags"></div>
+        <button class="next-button" type="button" id="next-button">下一手 →</button>
+      </section>
+    </aside>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const ACTION_COLORS = {
+      "弃牌": "#89938e",
+      "过牌": "#89938e",
+      "跟注": "#3f75a5",
+      "开池 2.5BB": "#d95d48",
+      "3Bet 到 11BB": "#d95d48",
+      "4Bet 到 22BB": "#ab3f31",
+      "下注 33% 底池": "#d5a934",
+      "下注 75% 底池": "#d95d48",
+      "下注 125% 底池": "#ab3f31",
+      "加注到 3 倍": "#ab3f31",
+      "全下": "#782d28"
+    };
+
+    const SCENARIOS = [
+      {
+        id: "pf-btn-a5s", stage: "preflop", kind: "翻前 · 首入池", title: "BTN 首入池",
+        subtitle: "6 人现金桌 · 100BB · Chip EV", heroPos: "BTN", villainPos: "BB", stack: 100, pot: 1.5,
+        line: "前位全部弃牌到你", hand: ["A♠", "5♠"], board: [], dealer: "hero",
+        prompt: "A5s 在按钮位怎么处理？",
+        answers: [["弃牌", 0], ["跟注", 0], ["开池 2.5BB", 100]],
+        explain: "A5s 具备高张、同花潜力和轮子顺听牌，是 BTN 宽范围中的稳定开池牌。常规 6-max 不采用开放跛入策略。",
+        tags: ["位置优势", "RFI", "同花 A"]
+      },
+      {
+        id: "pf-utg-kjo", stage: "preflop", kind: "翻前 · 首入池", title: "UTG 首入池",
+        subtitle: "6 人现金桌 · 100BB · Chip EV", heroPos: "UTG", villainPos: "BB", stack: 100, pot: 1.5,
+        line: "你是翻前第一个行动者", hand: ["K♠", "J♦"], board: [], dealer: "villain",
+        prompt: "KJo 在枪口位怎么处理？",
+        answers: [["弃牌", 82], ["开池 2.5BB", 18]],
+        explain: "KJo 在 UTG 位处于开池边缘，反向隐含赔率明显。不同抽水模型会少量混合，但弃牌是清晰主策略。",
+        tags: ["位置劣势", "边缘开池", "反向隐含赔率"]
+      },
+      {
+        id: "pf-bb-a8o", stage: "preflop", kind: "翻前 · 对抗开池", title: "BB 对 BTN",
+        subtitle: "6 人现金桌 · 100BB · BTN 开池 2.5BB", heroPos: "BB", villainPos: "BTN", stack: 100, pot: 4,
+        line: "BTN 开池到 2.5BB，SB 弃牌", hand: ["A♣", "8♦"], board: [], dealer: "villain",
+        prompt: "A8o 面对按钮位开池怎么防守？",
+        answers: [["弃牌", 8], ["跟注", 72], ["3Bet 到 11BB", 20]],
+        explain: "大盲已经投入 1BB，且 BTN 范围很宽。A8o 有足够牌力防守，以跟注为主，并可低频 3Bet 混合。",
+        tags: ["大盲防守", "底池赔率", "混合策略"]
+      },
+      {
+        id: "pf-sb-aqo", stage: "preflop", kind: "翻前 · 对抗开池", title: "SB 对 CO",
+        subtitle: "6 人现金桌 · 100BB · CO 开池 2.5BB", heroPos: "SB", villainPos: "CO", stack: 100, pot: 4,
+        line: "CO 开池到 2.5BB，BTN 弃牌", hand: ["A♥", "Q♣"], board: [], dealer: "villain",
+        prompt: "AQo 在小盲位怎么继续？",
+        answers: [["弃牌", 0], ["跟注", 12], ["3Bet 到 11BB", 88]],
+        explain: "SB 翻后全程不利位置，通常采用更线性的 3Bet 策略。AQo 对 CO 宽开池有明显价值，主策略是 3Bet。",
+        tags: ["小盲策略", "线性 3Bet", "不利位置"]
+      },
+      {
+        id: "pf-btn-76s-3b", stage: "preflop", kind: "翻前 · 面对 3Bet", title: "BTN 对 SB 3Bet",
+        subtitle: "6 人现金桌 · 100BB · BTN 开池后", heroPos: "BTN", villainPos: "SB", stack: 100, pot: 15,
+        line: "你开池 2.5BB，SB 3Bet 到 11BB，BB 弃牌", hand: ["7♣", "6♣"], board: [], dealer: "hero",
+        prompt: "76s 面对小盲 3Bet 怎么处理？",
+        answers: [["弃牌", 64], ["跟注", 36], ["4Bet 到 22BB", 0]],
+        explain: "76s 有可玩性，但面对较大的 OOP 3Bet 尺寸，价格与范围压制让它以弃牌为主；较低抽水或较小尺度下可增加跟注。",
+        tags: ["面对 3Bet", "权益实现", "价格敏感"]
+      },
+      {
+        id: "pf-co-aa-3b", stage: "preflop", kind: "翻前 · 面对 3Bet", title: "CO 对 BTN 3Bet",
+        subtitle: "6 人现金桌 · 100BB · CO 开池后", heroPos: "CO", villainPos: "BTN", stack: 100, pot: 14.5,
+        line: "你开池 2.5BB，BTN 3Bet 到 10BB", hand: ["A♠", "A♦"], board: [], dealer: "villain",
+        prompt: "AA 面对按钮位 3Bet 怎么处理？",
+        answers: [["跟注", 28], ["4Bet 到 22BB", 72]],
+        explain: "AA 以价值 4Bet 为主，同时保留少量跟注保护跟注范围。具体混合比例会随对手 3Bet 尺度和范围变化。",
+        tags: ["范围保护", "价值 4Bet", "混合策略"]
+      },
+      {
+        id: "pf-bb-a5s-4b", stage: "preflop", kind: "翻前 · 面对 4Bet", title: "BB 对 BTN 4Bet",
+        subtitle: "6 人现金桌 · 100BB · 3Bet 底池升级", heroPos: "BB", villainPos: "BTN", stack: 100, pot: 32,
+        line: "BTN 开池 2.5BB，你 3Bet 到 11BB，BTN 4Bet 到 22BB", hand: ["A♥", "5♥"], board: [], dealer: "villain",
+        prompt: "A5s 面对 4Bet 怎么处理？",
+        answers: [["弃牌", 58], ["跟注", 22], ["全下", 20]],
+        explain: "A5s 阻挡 AA、AK，并保留被跟时的同花与顺子权益，因此可低频 5Bet 全下；但在 100BB 常见高抽水模型中仍以弃牌为主。",
+        tags: ["阻挡牌", "5Bet 诈唬", "混合策略"]
+      },
+      {
+        id: "pf-bb-22", stage: "preflop", kind: "翻前 · 对抗开池", title: "BB 对 UTG",
+        subtitle: "6 人现金桌 · 100BB · UTG 开池 2.5BB", heroPos: "BB", villainPos: "UTG", stack: 100, pot: 4,
+        line: "UTG 开池到 2.5BB，其余玩家弃牌", hand: ["2♠", "2♦"], board: [], dealer: "villain",
+        prompt: "22 在大盲位怎么防守？",
+        answers: [["弃牌", 18], ["跟注", 82], ["3Bet 到 11BB", 0]],
+        explain: "面对 2.5BB 开池，22 获得较好直接价格，通常以跟注实现暗三条价值。它不适合作为线性价值 3Bet。",
+        tags: ["大盲防守", "口袋对子", "隐含赔率"]
+      },
+      {
+        id: "post-btn-ak-flop", stage: "postflop", kind: "翻后 · 翻牌", title: "BTN 对 BB",
+        subtitle: "单加注底池 · 100BB · 你是翻前进攻者", heroPos: "BTN", villainPos: "BB", stack: 97.5, pot: 5.5,
+        line: "你开池，BB 跟注；翻牌 BB 过牌", hand: ["A♠", "K♦"], board: ["A♥", "7♣", "2♠"], dealer: "hero",
+        prompt: "顶对顶踢脚如何构建下注？",
+        answers: [["过牌", 16], ["下注 33% 底池", 76], ["下注 75% 底池", 8]],
+        explain: "A 高干燥面给 BTN 明显范围优势，适合高频小注。AK 能从更差 Ax、对子和浮动牌获得价值，无需用大尺度把对手范围过早压缩。",
+        tags: ["范围优势", "干燥牌面", "小尺度"]
+      },
+      {
+        id: "post-bb-98-flop", stage: "postflop", kind: "翻后 · 翻牌", title: "BB 对 BTN",
+        subtitle: "单加注底池 · 100BB · 你是翻前跟注者", heroPos: "BB", villainPos: "BTN", stack: 97.5, pot: 5.5,
+        line: "BTN 开池，你跟注；翻牌轮到你", hand: ["9♣", "8♣"], board: ["9♦", "7♥", "6♥"], dealer: "villain",
+        prompt: "低张连接面，BB 应先怎么行动？",
+        answers: [["过牌", 68], ["下注 33% 底池", 25], ["下注 75% 底池", 7]],
+        explain: "BB 在 976 两同花面拥有更多两对、顺子与强听牌，可以建立 donk 范围；但总体仍需保留高频过牌，避免把过牌范围掏空。",
+        tags: ["坚果优势", "Donk", "范围保护"]
+      },
+      {
+        id: "post-btn-qq-flop", stage: "postflop", kind: "翻后 · 翻牌", title: "BTN 对 BB",
+        subtitle: "单加注底池 · 100BB · 你是翻前进攻者", heroPos: "BTN", villainPos: "BB", stack: 97.5, pot: 5.5,
+        line: "你开池，BB 跟注；翻牌 BB 过牌", hand: ["Q♠", "Q♥"], board: ["8♣", "7♣", "6♦"], dealer: "hero",
+        prompt: "超对在动态中低张面怎么处理？",
+        answers: [["过牌", 54], ["下注 33% 底池", 18], ["下注 75% 底池", 28]],
+        explain: "876 面更利于 BB 的跟注范围。QQ 虽是超对，却不代表整段范围占优；提高过牌频率能控池并保护后续街。下注时更偏向能收取听牌价格的尺度。",
+        tags: ["动态牌面", "范围劣势", "过牌保护"]
+      },
+      {
+        id: "post-co-aa-3bp", stage: "postflop", kind: "翻后 · 翻牌", title: "CO 对 BTN",
+        subtitle: "3Bet 底池 · 100BB · 你跟注 3Bet", heroPos: "CO", villainPos: "BTN", stack: 90, pot: 21.5,
+        line: "你开池并跟注 BTN 3Bet；翻牌你过牌，对手下注 33%", hand: ["A♣", "A♦"], board: ["K♠", "8♥", "3♣"], dealer: "villain",
+        prompt: "AA 面对小尺度持续下注怎么继续？",
+        answers: [["弃牌", 0], ["跟注", 84], ["加注到 3 倍", 16]],
+        explain: "AA 在 K83r 仍是强价值牌。跟注保留对手的 Kx 与诈唬，并保护跟注范围；低频加注可以建立价值端，但没有必要把所有强牌立刻加注。",
+        tags: ["3Bet 底池", "范围保护", "慢打"]
+      },
+      {
+        id: "post-bb-kt-turn", stage: "postflop", kind: "翻后 · 转牌", title: "BB 对 BTN",
+        subtitle: "单加注底池 · 100BB · 转牌面对二枪", heroPos: "BB", villainPos: "BTN", stack: 88, pot: 13.5,
+        line: "翻牌 K72r 你跟注 33%；转牌 9♣，对手下注 75%", hand: ["K♣", "T♣"], board: ["K♦", "7♠", "2♣", "9♣"], dealer: "villain",
+        prompt: "顶对加同花听牌面对二枪怎么做？",
+        answers: [["弃牌", 0], ["跟注", 86], ["加注到 3 倍", 14]],
+        explain: "KT 具备摊牌价值与强听牌，远高于直接底池赔率阈值。跟注保留对手诈唬并避免被更强范围再加注；可少量半诈唬加注。",
+        tags: ["底池赔率", "复合权益", "半诈唬"]
+      },
+      {
+        id: "post-btn-a5-turn", stage: "postflop", kind: "翻后 · 转牌", title: "BTN 对 BB",
+        subtitle: "单加注底池 · 100BB · 转牌继续进攻", heroPos: "BTN", villainPos: "BB", stack: 92, pot: 9,
+        line: "翻牌 K♠8♦3♣ 你下注 33% 被跟；转牌 4♥，BB 过牌", hand: ["A♣", "5♣"], board: ["K♠", "8♦", "3♣", "4♥"], dealer: "hero",
+        prompt: "A5s 获得卡顺后如何行动？",
+        answers: [["过牌", 42], ["下注 75% 底池", 58]],
+        explain: "A5 获得轮子卡顺，并阻挡部分 Ax 继续范围，是合理的二枪候选；但它仍有 A-high 摊牌价值，因此在总体策略中保留相当过牌频率。",
+        tags: ["二枪", "阻挡牌", "混合策略"]
+      },
+      {
+        id: "post-bb-jt-river", stage: "postflop", kind: "翻后 · 河牌", title: "BB 对 BTN",
+        subtitle: "单加注底池 · 100BB · 河牌抓诈", heroPos: "BB", villainPos: "BTN", stack: 69, pot: 31,
+        line: "牌面 Q♠8♠4♦ 2♣ 2♥；你跟注两街，河牌对手下注 75%", hand: ["Q♣", "J♣"], board: ["Q♠", "8♠", "4♦", "2♣", "2♥"], dealer: "villain",
+        prompt: "QJ 顶对面对河牌第三枪？",
+        answers: [["弃牌", 72], ["跟注", 28]],
+        explain: "QJ 不阻挡错失的黑桃听花，却会阻挡对手部分 Qx 薄价值。它可少量抓诈，但在极化 75% 三枪线中通常以弃牌为主。",
+        tags: ["河牌极化", "抓诈", "解阻挡"]
+      },
+      {
+        id: "post-btn-nut-river", stage: "postflop", kind: "翻后 · 河牌", title: "BTN 对 BB",
+        subtitle: "单加注底池 · 100BB · 河牌价值下注", heroPos: "BTN", villainPos: "BB", stack: 58, pot: 42,
+        line: "你下注翻牌和转牌均被跟；河牌 BB 过牌", hand: ["A♥", "5♥"], board: ["K♥", "9♥", "4♣", "2♥", "7♦"], dealer: "hero",
+        prompt: "坚果同花在河牌选什么尺度？",
+        answers: [["过牌", 0], ["下注 75% 底池", 24], ["下注 125% 底池", 76]],
+        explain: "你拥有不可被超越的价值牌，且该行动线可以包含错失听牌诈唬。坚果优势支持极化超池下注，向较弱同花、两对与强 Kx 施压。",
+        tags: ["坚果优势", "极化", "超池下注"]
+      },
+      {
+        id: "post-sb-ak-flop", stage: "postflop", kind: "翻后 · 翻牌", title: "SB 对 BTN",
+        subtitle: "3Bet 底池 · 100BB · 你是翻前进攻者", heroPos: "SB", villainPos: "BTN", stack: 89, pot: 23,
+        line: "你 3Bet，BTN 跟注；翻牌你首先行动", hand: ["A♦", "K♣"], board: ["J♠", "7♥", "4♣"], dealer: "villain",
+        prompt: "AK 高牌在 3Bet 底池如何处理？",
+        answers: [["过牌", 38], ["下注 33% 底池", 62], ["下注 75% 底池", 0]],
+        explain: "SB 在 J74r 保有高对与高张优势，AK 可用小注拒绝部分权益并保留两张高张改进机会；同时需要一定过牌来保护未成牌范围。",
+        tags: ["3Bet 底池", "小尺度", "权益拒绝"]
+      }
+    ];
+
+    const state = {
+      mode: "mixed",
+      current: null,
+      previousId: null,
+      answered: false,
+      sessionAnswered: 0,
+      sessionScore: 0,
+      history: loadHistory()
+    };
+
+    const elements = Object.fromEntries([
+      "spot-kind", "spot-title", "spot-subtitle", "hero-position", "villain-position",
+      "effective-stack", "pot-size", "action-line", "board", "pot-label", "villain-chip",
+      "villain-seat-meta", "hero-chip", "hero-seat-meta", "hole-cards", "dealer-button",
+      "decision-heading", "decision-subtitle", "answers", "feedback", "feedback-result",
+      "feedback-title", "feedback-copy", "concept-tags", "next-button", "session-count",
+      "accuracy", "mobile-score", "mode-switch", "reset-button", "share-button", "table-wrap", "toast"
+    ].map(id => [id, document.getElementById(id)]));
+
+    function loadHistory() {
+      try {
+        return JSON.parse(localStorage.getItem("poker-lab-history")) || { answered: 0, score: 0 };
+      } catch {
+        return { answered: 0, score: 0 };
+      }
+    }
+
+    function saveHistory() {
+      localStorage.setItem("poker-lab-history", JSON.stringify(state.history));
+    }
+
+    function cardNode(card) {
+      const node = document.createElement("span");
+      node.className = `playing-card ${/[♥♦]/.test(card) ? "red" : "black"}`;
+      node.textContent = card;
+      return node;
+    }
+
+    function eligibleScenarios() {
+      return state.mode === "mixed" ? SCENARIOS : SCENARIOS.filter(item => item.stage === state.mode);
+    }
+
+    function pickScenario() {
+      const pool = eligibleScenarios();
+      const choices = pool.filter(item => item.id !== state.previousId);
+      return choices[Math.floor(Math.random() * choices.length)] || pool[0];
+    }
+
+    function renderScore() {
+      const sessionAccuracy = state.sessionAnswered ? Math.round(state.sessionScore / state.sessionAnswered * 100) : null;
+      elements["session-count"].textContent = `${state.sessionAnswered} / 10`;
+      elements.accuracy.textContent = sessionAccuracy === null ? "—" : `${sessionAccuracy}%`;
+      elements["mobile-score"].textContent = sessionAccuracy === null ? "· 0 / 10" : `· ${sessionAccuracy}% · ${state.sessionAnswered}/10`;
+      document.querySelector(".rail-right").style.setProperty("--session-progress", `${state.sessionAnswered * 10}%`);
+    }
+
+    let toastTimer;
+
+    function showToast(message) {
+      clearTimeout(toastTimer);
+      elements.toast.textContent = message;
+      elements.toast.classList.add("is-visible");
+      toastTimer = setTimeout(() => elements.toast.classList.remove("is-visible"), 2800);
+    }
+
+    async function shareTrainer() {
+      if (location.protocol === "file:") {
+        showToast("当前是本地文件：可直接发送 index.html，或按 README 发布后分享网址。");
+        return;
+      }
+
+      const shareData = {
+        title: document.title,
+        text: "一起练习德州扑克翻前与翻后 GTO 决策",
+        url: location.href
+      };
+
+      try {
+        if (navigator.share) {
+          await navigator.share(shareData);
+          return;
+        }
+        await navigator.clipboard.writeText(location.href);
+        showToast("网址已复制，可以发给朋友了。");
+      } catch (error) {
+        if (error.name !== "AbortError") showToast("未能自动分享，请复制浏览器地址栏中的网址。");
+      }
+    }
+
+    function renderScenario() {
+      const item = state.current;
+      elements["spot-kind"].textContent = item.kind;
+      elements["spot-title"].textContent = item.title;
+      elements["spot-subtitle"].textContent = item.subtitle;
+      elements["hero-position"].textContent = item.heroPos;
+      elements["villain-position"].textContent = item.villainPos;
+      elements["effective-stack"].textContent = `${item.stack}BB`;
+      elements["pot-size"].textContent = `${item.pot}BB`;
+      elements["action-line"].textContent = item.line;
+      elements["pot-label"].textContent = `底池 ${item.pot}BB`;
+      elements["villain-chip"].textContent = `VILLAIN · ${item.stack}BB`;
+      elements["villain-seat-meta"].textContent = item.villainPos;
+      elements["hero-chip"].textContent = `YOU · ${item.stack}BB`;
+      elements["hero-seat-meta"].textContent = item.heroPos;
+      elements["dealer-button"].dataset.seat = item.dealer;
+      elements.board.replaceChildren(...item.board.map(cardNode));
+      elements["hole-cards"].replaceChildren(...item.hand.map(cardNode));
+      elements["decision-heading"].textContent = item.prompt;
+      elements["decision-subtitle"].textContent = "选择最接近基线的行动。提交后显示混合频率。";
+      elements.feedback.hidden = true;
+      elements.answers.replaceChildren(...item.answers.map(([name, frequency]) => answerNode(name, frequency)));
+      playDealAnimation();
+    }
+
+    function playDealAnimation() {
+      elements["table-wrap"].classList.remove("is-dealing");
+      elements.answers.classList.remove("is-entering");
+      void elements["table-wrap"].offsetWidth;
+      elements["table-wrap"].classList.add("is-dealing");
+      elements.answers.classList.add("is-entering");
+    }
+
+    function answerNode(name, frequency) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "answer-button";
+      button.style.setProperty("--action-color", ACTION_COLORS[name] || "#64716b");
+      button.dataset.action = name;
+      button.dataset.frequency = frequency;
+
+      const label = document.createElement("span");
+      label.className = "answer-name";
+      label.textContent = name;
+      const freq = document.createElement("span");
+      freq.className = "answer-frequency";
+      freq.textContent = `${frequency}%`;
+      button.append(label, freq);
+      return button;
+    }
+
+    function scoreAnswer(frequency, maxFrequency) {
+      if (frequency === maxFrequency) return 1;
+      if (frequency >= 20) return 0.5;
+      return 0;
+    }
+
+    function answer(button) {
+      if (state.answered) return;
+      state.answered = true;
+
+      const frequency = Number(button.dataset.frequency);
+      const maxFrequency = Math.max(...state.current.answers.map(answerItem => answerItem[1]));
+      const earned = scoreAnswer(frequency, maxFrequency);
+      state.sessionAnswered += 1;
+      state.sessionScore += earned;
+      state.history.answered += 1;
+      state.history.score += earned;
+      saveHistory();
+
+      elements.answers.querySelectorAll("button").forEach(item => {
+        item.disabled = true;
+        item.classList.add("revealed");
+        if (Number(item.dataset.frequency) === maxFrequency) item.classList.add("best");
+      });
+      button.classList.add("selected");
+      if (earned === 0) button.classList.add("missed");
+
+      const resultClass = earned === 1 ? "" : earned === 0.5 ? "partial" : "wrong";
+      const resultTitle = earned === 1 ? "主策略" : earned === 0.5 ? "可混合" : "偏离基线";
+      elements["feedback-result"].className = `feedback-result ${resultClass}`;
+      elements["feedback-title"].textContent = resultTitle;
+      elements["feedback-copy"].textContent = state.current.explain;
+      elements["concept-tags"].replaceChildren(...state.current.tags.map(tag => {
+        const span = document.createElement("span");
+        span.className = "concept-tag";
+        span.textContent = tag;
+        return span;
+      }));
+      elements.feedback.hidden = false;
+      renderScore();
+
+      if (state.sessionAnswered >= 10) {
+        const score = Math.round(state.sessionScore / state.sessionAnswered * 100);
+        elements["next-button"].textContent = `本轮 ${score}% · 开始新一轮 →`;
+      }
+    }
+
+    function nextScenario() {
+      if (state.sessionAnswered >= 10) {
+        state.sessionAnswered = 0;
+        state.sessionScore = 0;
+      }
+      state.previousId = state.current?.id || null;
+      state.current = pickScenario();
+      state.answered = false;
+      elements["next-button"].textContent = "下一手 →";
+      renderScenario();
+      renderScore();
+    }
+
+    elements.answers.addEventListener("click", event => {
+      const button = event.target.closest("button[data-action]");
+      if (button) answer(button);
+    });
+
+    elements["next-button"].addEventListener("click", nextScenario);
+    elements["share-button"].addEventListener("click", shareTrainer);
+
+    elements["mode-switch"].addEventListener("click", event => {
+      const button = event.target.closest("button[data-mode]");
+      if (!button || button.dataset.mode === state.mode) return;
+      state.mode = button.dataset.mode;
+      elements["mode-switch"].querySelectorAll("button").forEach(item => {
+        item.setAttribute("aria-pressed", String(item === button));
+      });
+      nextScenario();
+    });
+
+    elements["reset-button"].addEventListener("click", () => {
+      state.sessionAnswered = 0;
+      state.sessionScore = 0;
+      state.history = { answered: 0, score: 0 };
+      saveHistory();
+      renderScore();
+      nextScenario();
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Enter" && state.answered) {
+        nextScenario();
+        return;
+      }
+      const index = Number(event.key) - 1;
+      const buttons = [...elements.answers.querySelectorAll("button")];
+      if (!state.answered && index >= 0 && index < buttons.length) answer(buttons[index]);
+    });
+
+    nextScenario();
+  </script>
+</body>
+</html>
