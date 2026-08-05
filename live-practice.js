@@ -487,6 +487,73 @@
     }));
   }
 
+  function preflopHandLabel(cards) {
+    const details = preflopScore(cards);
+    const ranks = cards.map(card => card[0]).join("");
+    const traits = [];
+    if (details.pair) traits.push("口袋对子");
+    else {
+      if (details.suited) traits.push("同花");
+      if (details.gap === 1) traits.push("连张");
+      else if (details.gap === 2) traits.push("隔张连接");
+      if (details.high >= 13) traits.push("高张");
+    }
+    return `${ranks} · ${traits.join("、") || "非同花非连接牌"}`;
+  }
+
+  function postflopHandLabel(seat) {
+    const profile = postflopProfile(seat);
+    const names = {
+      "High Card": "高牌", Pair: "一对", "Two Pair": "两对", "Three of a Kind": "三条",
+      Straight: "顺子", Flush: "同花", "Full House": "葫芦", "Four of a Kind": "四条",
+      "Straight Flush": "同花顺"
+    };
+    const draws = [];
+    if (profile.flushDraw) draws.push("同花听牌");
+    if (profile.straightDraw) draws.push("顺子听牌");
+    return `${names[profile.hand.name] || profile.hand.name}${draws.length ? ` + ${draws.join("、")}` : ""}`;
+  }
+
+  function boardTexture(board) {
+    if (!board.length) return "翻前尚无公共牌";
+    const rankCounts = board.reduce((counts, card) => ({ ...counts, [card[0]]: (counts[card[0]] || 0) + 1 }), {});
+    const suitCounts = board.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
+    const notes = [];
+    if (Object.values(rankCounts).some(count => count >= 2)) notes.push("公共牌成对");
+    const maxSuit = Math.max(...Object.values(suitCounts));
+    if (maxSuit >= 3) notes.push("同花压力较高");
+    else if (maxSuit === 2) notes.push("双色牌面");
+    else notes.push("彩虹牌面");
+    return notes.join(" · ");
+  }
+
+  function buildDecisionAnalysis(seat, strategy, candidate, gameState) {
+    const player = gameState.players[seat];
+    const pot = totalPot(gameState);
+    const invested = gameState.currentBets.get(seat) || 0;
+    const toCall = Math.max(0, currentBet(gameState) - invested);
+    const activePlayers = gameState.players.filter(item => item && item.status !== "FOLDED" && item.status !== "BUSTED").length;
+    const price = toCall > 0 ? toCall / Math.max(1, pot + toCall) : 0;
+    const spr = gameState.street === "PREFLOP" ? null : player.stack / Math.max(1, pot);
+    const chosenFrequency = Math.round((strategy.entries.find(entry => entry.label === candidate.label)?.frequency || 0) * 100);
+    const topFrequency = Math.round((strategy.entries[0]?.frequency || 0) * 100);
+    const hand = gameState.street === "PREFLOP" ? preflopHandLabel(player.hand) : postflopHandLabel(seat);
+    const priceText = toCall > 0
+      ? `需补 ${formatBb(toCall)}，跟注后总底池约 ${formatBb(pot + toCall)}，盈亏平衡权益约 ${Math.round(price * 100)}%。`
+      : `当前无需补筹码，可以免费过牌；若主动下注，需要说明更差牌为何跟注或更好牌为何弃牌。`;
+    const structureText = gameState.street === "PREFLOP"
+      ? `翻前先按 ${positionForSeat(seat, gameState)} 位置、前序加注压力和手牌可玩性确定继续范围，再在跟注与再加注之间分配组合。`
+      : `翻后按“范围与坚果关系 → 尺度 → 价值/诈唬构造 → 阻挡牌”的顺序检查；当前简化引擎主要使用成牌、听牌和价格。`;
+    return {
+      node: `${activePlayers} 人仍在牌局 · 底池 ${formatBb(pot)} · 你的后手 ${formatBb(player.stack)}${spr === null ? "" : ` · SPR ${spr.toFixed(1)}`}`,
+      hand: `${player.hand.map(displayCard).join(" ")} · ${hand}${gameState.board.length ? `；${boardTexture(gameState.board)}` : ""}`,
+      price: priceText,
+      structure: structureText,
+      frequency: `你的行动在当前近似策略中占 ${chosenFrequency}%，最高频行动占 ${topFrequency}%。频率用于比较策略结构，不是精确 Solver 输出。`,
+      knowledge: "知识库检查项：先还原节点和范围，再计算价格，随后构造价值与诈唬，最后才用阻挡牌选择具体组合。"
+    };
+  }
+
   function actCandidate(seat, candidate, strategy, isHero = false) {
     const gameStateBefore = state.engine.state;
     const oldStreet = gameStateBefore.street;
@@ -503,6 +570,7 @@
         recommended: strategy.entries[0].label,
         distribution: decisionDistribution(strategy),
         reason: strategy.reason,
+        analysis: buildDecisionAnalysis(seat, strategy, candidate, gameStateBefore),
         ...verdict
       });
       state.sessionDecisionPoints += 1;
@@ -809,6 +877,29 @@
     return list;
   }
 
+  function reviewDetailNode(label, text) {
+    const row = document.createElement("div");
+    row.className = "review-detail-row";
+    const title = document.createElement("strong");
+    title.textContent = label;
+    const copy = document.createElement("p");
+    copy.textContent = text;
+    row.append(title, copy);
+    return row;
+  }
+
+  function decisionFeedback(decision) {
+    const chosenFrequency = decision.distribution.find(item => item.label === decision.chosen)?.frequency || 0;
+    const recommendedFrequency = decision.distribution.find(item => item.label === decision.recommended)?.frequency || 0;
+    if (decision.tone === "good") {
+      return `这次选择落在策略的主要分支中。重点不是“猜中答案”，而是能否用位置、价格和范围结构解释为什么该分支需要高频存在。`;
+    }
+    if (decision.tone === "mixed") {
+      return `${decision.chosen} 是可保留的混合分支，但当前只有约 ${chosenFrequency}%，低于主策略 ${decision.recommended} 的约 ${recommendedFrequency}%。下次先确认是什么牌型或阻挡条件让你偏向低频支线。`;
+    }
+    return `${decision.chosen} 在当前模型中只有约 ${chosenFrequency}%，明显低于主策略 ${decision.recommended} 的约 ${recommendedFrequency}%。优先检查是否高估了绝对牌力、忽略了价格，或用“可能有诈唬”代替了范围构造。`;
+  }
+
   function renderReviewDecisions(review) {
     el["live-review-decisions"].replaceChildren();
     if (!review.decisions.length) {
@@ -828,12 +919,22 @@
       badge.textContent = `${decision.rating} ${decision.score}%`;
       header.append(title, badge);
       const comparison = document.createElement("p");
+      comparison.className = "review-comparison";
       comparison.textContent = `你选择：${decision.chosen} · 主策略：${decision.recommended}`;
-      const reason = document.createElement("small");
-      reason.textContent = decision.reason;
-      card.append(header, comparison, distributionNode(decision.distribution), reason);
+      const details = document.createElement("div");
+      details.className = "review-detail-list";
+      const analysis = decision.analysis || {};
+      if (analysis.node) details.append(reviewDetailNode("节点", analysis.node));
+      if (analysis.hand) details.append(reviewDetailNode("手牌与牌面", analysis.hand));
+      if (analysis.price) details.append(reviewDetailNode("价格", analysis.price));
+      details.append(reviewDetailNode("策略逻辑", analysis.structure || decision.reason));
+      details.append(reviewDetailNode("你的选择", decisionFeedback(decision)));
+      if (analysis.frequency) details.append(reviewDetailNode("频率边界", analysis.frequency));
+      if (analysis.knowledge) details.append(reviewDetailNode("复盘顺序", analysis.knowledge));
+      card.append(header, comparison, distributionNode(decision.distribution), details);
       card.addEventListener("click", () => {
-        const matching = review.timeline.findIndex(step => step.actorSeat === HERO_SEAT && step.actionLabel === decision.chosen);
+        const matching = review.timeline.findIndex(step => step.actorSeat === HERO_SEAT
+          && step.street === decision.street && step.actionLabel === decision.chosen);
         if (matching >= 0) renderReviewStep(matching);
       });
       el["live-review-decisions"].append(card);
