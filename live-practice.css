@@ -358,11 +358,11 @@
   .live-table-felt { inset: 19% 5%; border-width: 9px; }
   .live-seat { width: 96px; }
   .live-seat[data-index="0"] { top: 92%; }
-  .live-seat[data-index="1"] { left: 10%; top: 74%; }
-  .live-seat[data-index="2"] { left: 11%; top: 27%; }
+  .live-seat[data-index="1"] { left: 12%; top: 74%; }
+  .live-seat[data-index="2"] { left: 12%; top: 27%; }
   .live-seat[data-index="3"] { top: 8%; }
-  .live-seat[data-index="4"] { left: 89%; top: 27%; }
-  .live-seat[data-index="5"] { left: 90%; top: 74%; }
+  .live-seat[data-index="4"] { left: 88%; top: 27%; }
+  .live-seat[data-index="5"] { left: 88%; top: 74%; }
   .live-seat-info { width: 88px; min-height: 38px; grid-template-columns: 24px 1fr; column-gap: 5px; padding: 5px; }
   .live-avatar { width: 23px; height: 23px; font-size: 9px; }
   .live-seat-name { font-size: 9px; }
