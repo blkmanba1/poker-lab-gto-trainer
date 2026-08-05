@@ -13,6 +13,7 @@
   // Translated from the local knowledge layer: knowledge/index.md,
   // knowledge/concepts/核心概念.md and knowledge/topics/翻后决策框架.md.
   // These are teaching heuristics, not a claim of exact Solver output.
+  const KNOWLEDGE_BUNDLE = window.PokerKnowledgeBase;
   const KNOWLEDGE_POLICY = {
     sources: "核心概念 · 翻后决策框架 · 一手牌讲解集合摘要",
     sequence: "还原节点 → 比较范围 → 计算价格 → 构造价值/诈唬 → 检查阻挡牌",
@@ -21,7 +22,10 @@
     monotoneBoardAggressionFactor: 0.88,
     blockerBluffFactor: 1.12,
     expensiveCallFactor: 0.72,
-    cheapCallFactor: 1.12
+    cheapCallFactor: 1.12,
+    ...(KNOWLEDGE_BUNDLE?.rules?.strategy || {}),
+    sequence: KNOWLEDGE_BUNDLE?.rules?.sequence?.join(" → ") || "还原节点 → 比较范围 → 计算价格 → 构造价值/诈唬 → 检查阻挡牌",
+    sources: KNOWLEDGE_BUNDLE?.rules?.sourceDocuments?.join(" · ") || "核心概念 · 翻后决策框架 · 一手牌讲解集合摘要"
   };
   const TABLE_PLAYERS = [
     { id: HERO_ID, name: "你" },
@@ -490,6 +494,15 @@
 
     const policy = applyKnowledgePolicy(weights, signals, gameState.street, facingBet, draw);
     weights = policy.weights;
+    const queryTerms = [
+      signals.multiway && "多人底池",
+      signals.pairedBoard && "成对牌面",
+      signals.monotonePressure && "同花",
+      facingBet && "底池赔率",
+      signals.blocksFlush && "阻挡",
+      gameState.street === "PREFLOP" ? "翻前范围" : "范围优势 坚果优势 下注尺度"
+    ].filter(Boolean);
+    const knowledgeMatches = KNOWLEDGE_BUNDLE?.search?.(queryTerms, 3) || [];
     const knowledgeSummary = `${policy.notes.join("；")}。依据：${KNOWLEDGE_POLICY.sequence}。`;
     const groupWeights = normalizeGroupWeights(weights, candidates);
     const entries = [];
@@ -507,7 +520,7 @@
       }));
     });
     entries.sort((a, b) => b.frequency - a.frequency);
-    return { entries, reason, groupWeights, knowledgeSummary, knowledgeSignals: signals, knowledgeSources: KNOWLEDGE_POLICY.sources };
+    return { entries, reason, groupWeights, knowledgeSummary, knowledgeSignals: signals, knowledgeSources: KNOWLEDGE_POLICY.sources, knowledgeMatches };
   }
 
   function chooseMixedAction(strategy) {
@@ -626,7 +639,8 @@
       structure: structureText,
       frequency: `你的行动在当前近似策略中占 ${chosenFrequency}%，最高频行动占 ${topFrequency}%。频率用于比较策略结构，不是精确 Solver 输出。`,
       knowledge: strategy.knowledgeSummary,
-      sources: strategy.knowledgeSources
+      sources: strategy.knowledgeSources,
+      matches: strategy.knowledgeMatches
     };
   }
 
@@ -964,6 +978,30 @@
     return row;
   }
 
+  function knowledgeMatchesNode(matches) {
+    const section = document.createElement("div");
+    section.className = "review-knowledge-hits";
+    const title = document.createElement("strong");
+    title.textContent = "命中的知识条目";
+    section.append(title);
+    matches.forEach(match => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "review-knowledge-hit";
+      const heading = document.createElement("b");
+      heading.textContent = match.title;
+      const excerpt = document.createElement("span");
+      excerpt.textContent = match.excerpt;
+      button.append(heading, excerpt);
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        window.PokerKnowledgeUI?.openDocument(match.id);
+      });
+      section.append(button);
+    });
+    return section;
+  }
+
   function decisionFeedback(decision) {
     const chosenFrequency = decision.distribution.find(item => item.label === decision.chosen)?.frequency || 0;
     const recommendedFrequency = decision.distribution.find(item => item.label === decision.recommended)?.frequency || 0;
@@ -1008,6 +1046,7 @@
       if (analysis.frequency) details.append(reviewDetailNode("频率边界", analysis.frequency));
       if (analysis.knowledge) details.append(reviewDetailNode("复盘顺序", analysis.knowledge));
       if (analysis.sources) details.append(reviewDetailNode("知识来源", analysis.sources));
+      if (analysis.matches?.length) details.append(knowledgeMatchesNode(analysis.matches));
       card.append(header, comparison, distributionNode(decision.distribution), details);
       card.addEventListener("click", () => {
         const matching = review.timeline.findIndex(step => step.actorSeat === HERO_SEAT

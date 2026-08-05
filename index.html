@@ -984,6 +984,7 @@
     }
   </style>
   <link rel="stylesheet" href="live-practice.css?v=20260805-4">
+  <link rel="stylesheet" href="knowledge-base.css?v=20260805-1">
 </head>
 <body>
   <header class="topbar">
@@ -1006,6 +1007,7 @@
       <div class="score-item"><span class="score-label">本轮</span><strong class="score-value" id="session-count">0 / 10</strong></div>
       <div class="score-item"><span class="score-label">准确率</span><strong class="score-value" id="accuracy">—</strong></div>
       <button class="wrong-book-button" type="button" id="wrong-book-button" title="打开错题本" aria-label="打开错题本">错题本 <span class="wrong-count" id="wrong-count">0</span></button>
+      <button class="knowledge-button" type="button" id="knowledge-button" title="打开德州扑克知识库" aria-label="打开德州扑克知识库">知识库</button>
       <button class="icon-button" type="button" id="share-button" title="分享训练器" aria-label="分享训练器">↗</button>
       <button class="icon-button" type="button" id="reset-button" title="重置成绩" aria-label="重置成绩">↻</button>
     </div>
@@ -1193,6 +1195,27 @@
         <h3>你的决策</h3>
         <div id="live-review-decisions"></div>
       </aside>
+    </div>
+  </dialog>
+
+  <dialog class="knowledge-dialog" id="knowledge-dialog" aria-labelledby="knowledge-title">
+    <header class="knowledge-dialog-header">
+      <div>
+        <p class="eyebrow">KNOWLEDGE BASE · 结构化知识</p>
+        <h2 id="knowledge-title">德州扑克知识库</h2>
+        <p>公开的是整理后的知识层，不包含原始课程转写稿。</p>
+      </div>
+      <div class="knowledge-dialog-header-actions">
+        <input class="knowledge-search" id="knowledge-search" type="search" placeholder="搜索概念或关键词" aria-label="搜索知识库">
+        <button class="dialog-close" type="button" id="knowledge-close" aria-label="关闭知识库">×</button>
+      </div>
+    </header>
+    <div class="knowledge-layout">
+      <nav class="knowledge-document-list" id="knowledge-document-list" aria-label="知识文档列表"></nav>
+      <section class="knowledge-reader" aria-live="polite">
+        <div class="knowledge-reader-meta" id="knowledge-meta"></div>
+        <article class="knowledge-document-content" id="knowledge-document-content"></article>
+      </section>
     </div>
   </dialog>
 
@@ -1773,6 +1796,8 @@
 
     nextScenario();
   </script>
+  <script src="knowledge-base.js?v=20260805-1"></script>
+  <script src="knowledge-ui.js?v=20260805-1"></script>
   <script src="vendor/pokersolver.min.js?v=20260805-2"></script>
   <script src="vendor/pokertools-engine.min.js?v=20260805-3"></script>
   <script src="live-practice.js?v=20260805-5"></script>
