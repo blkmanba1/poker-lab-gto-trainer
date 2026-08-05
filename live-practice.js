@@ -967,6 +967,22 @@
     return list;
   }
 
+  function knowledgeMatchesNode(matches) {
+    const section = document.createElement("div");
+    section.className = "review-knowledge-hits";
+    const match = matches[0];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "review-knowledge-hit";
+    button.textContent = `知识依据：${match.title} · 查看相关条目`;
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      window.PokerKnowledgeUI?.openDocument(match.id);
+    });
+    section.append(button);
+    return section;
+  }
+
   function reviewDetailNode(label, text) {
     const row = document.createElement("div");
     row.className = "review-detail-row";
@@ -978,40 +994,16 @@
     return row;
   }
 
-  function knowledgeMatchesNode(matches) {
-    const section = document.createElement("div");
-    section.className = "review-knowledge-hits";
-    const title = document.createElement("strong");
-    title.textContent = "命中的知识条目";
-    section.append(title);
-    matches.forEach(match => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "review-knowledge-hit";
-      const heading = document.createElement("b");
-      heading.textContent = match.title;
-      const excerpt = document.createElement("span");
-      excerpt.textContent = match.excerpt;
-      button.append(heading, excerpt);
-      button.addEventListener("click", event => {
-        event.stopPropagation();
-        window.PokerKnowledgeUI?.openDocument(match.id);
-      });
-      section.append(button);
-    });
-    return section;
-  }
-
   function decisionFeedback(decision) {
     const chosenFrequency = decision.distribution.find(item => item.label === decision.chosen)?.frequency || 0;
     const recommendedFrequency = decision.distribution.find(item => item.label === decision.recommended)?.frequency || 0;
     if (decision.tone === "good") {
-      return `这次选择落在策略的主要分支中。重点不是“猜中答案”，而是能否用位置、价格和范围结构解释为什么该分支需要高频存在。`;
+      return `重点：${decision.chosen} 是主频分支；记住用位置、价格和范围结构解释它，而不是只记答案。`;
     }
     if (decision.tone === "mixed") {
-      return `${decision.chosen} 是可保留的混合分支，但当前只有约 ${chosenFrequency}%，低于主策略 ${decision.recommended} 的约 ${recommendedFrequency}%。下次先确认是什么牌型或阻挡条件让你偏向低频支线。`;
+      return `重点：${decision.chosen} 可以混合，但只有 ${chosenFrequency}%；${decision.recommended} 更常见（${recommendedFrequency}%）。`;
     }
-    return `${decision.chosen} 在当前模型中只有约 ${chosenFrequency}%，明显低于主策略 ${decision.recommended} 的约 ${recommendedFrequency}%。优先检查是否高估了绝对牌力、忽略了价格，或用“可能有诈唬”代替了范围构造。`;
+    return `重点：${decision.chosen} 只有 ${chosenFrequency}%；优先检查是否高估牌力、忽略价格，或没有构造出可信的价值/诈唬范围。`;
   }
 
   function renderReviewDecisions(review) {
@@ -1035,19 +1027,17 @@
       const comparison = document.createElement("p");
       comparison.className = "review-comparison";
       comparison.textContent = `你选择：${decision.chosen} · 主策略：${decision.recommended}`;
+      const takeaway = document.createElement("p");
+      takeaway.className = "review-takeaway";
+      takeaway.textContent = decisionFeedback(decision);
       const details = document.createElement("div");
       details.className = "review-detail-list";
       const analysis = decision.analysis || {};
       if (analysis.node) details.append(reviewDetailNode("节点", analysis.node));
       if (analysis.hand) details.append(reviewDetailNode("手牌与牌面", analysis.hand));
       if (analysis.price) details.append(reviewDetailNode("价格", analysis.price));
-      details.append(reviewDetailNode("策略逻辑", analysis.structure || decision.reason));
-      details.append(reviewDetailNode("你的选择", decisionFeedback(decision)));
-      if (analysis.frequency) details.append(reviewDetailNode("频率边界", analysis.frequency));
-      if (analysis.knowledge) details.append(reviewDetailNode("复盘顺序", analysis.knowledge));
-      if (analysis.sources) details.append(reviewDetailNode("知识来源", analysis.sources));
       if (analysis.matches?.length) details.append(knowledgeMatchesNode(analysis.matches));
-      card.append(header, comparison, distributionNode(decision.distribution), details);
+      card.append(header, comparison, distributionNode(decision.distribution), takeaway, details);
       card.addEventListener("click", () => {
         const matching = review.timeline.findIndex(step => step.actorSeat === HERO_SEAT
           && step.street === decision.street && step.actionLabel === decision.chosen);
