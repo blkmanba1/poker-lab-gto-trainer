@@ -10,6 +10,19 @@
   const STREET_LABELS = { PREFLOP: "翻前", FLOP: "翻牌", TURN: "转牌", RIVER: "河牌", SHOWDOWN: "摊牌" };
   const SUIT_SYMBOL = { s: "♠", h: "♥", d: "♦", c: "♣" };
   const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+  // Translated from the local knowledge layer: knowledge/index.md,
+  // knowledge/concepts/核心概念.md and knowledge/topics/翻后决策框架.md.
+  // These are teaching heuristics, not a claim of exact Solver output.
+  const KNOWLEDGE_POLICY = {
+    sources: "核心概念 · 翻后决策框架 · 一手牌讲解集合摘要",
+    sequence: "还原节点 → 比较范围 → 计算价格 → 构造价值/诈唬 → 检查阻挡牌",
+    multiwayAggressionFactor: 0.72,
+    pairedBoardAggressionFactor: 0.86,
+    monotoneBoardAggressionFactor: 0.88,
+    blockerBluffFactor: 1.12,
+    expensiveCallFactor: 0.72,
+    cheapCallFactor: 1.12
+  };
   const TABLE_PLAYERS = [
     { id: HERO_ID, name: "你" },
     { id: "bot-mina", name: "Mina" },
@@ -356,6 +369,63 @@
     return { hand, strength, flushDraw, straightDraw: hasStraightDraw };
   }
 
+  function knowledgeSignals(seat, gameState, toCall) {
+    const player = gameState.players[seat];
+    const activePlayers = gameState.players.filter(item => item && item.status !== "FOLDED" && item.status !== "BUSTED").length;
+    const suits = gameState.board.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
+    const ranks = gameState.board.reduce((counts, card) => ({ ...counts, [card[0]]: (counts[card[0]] || 0) + 1 }), {});
+    const maxSuit = gameState.board.length ? Math.max(...Object.values(suits)) : 0;
+    const pairedBoard = Object.values(ranks).some(count => count >= 2);
+    const pot = totalPot(gameState);
+    const potOdds = toCall > 0 ? toCall / Math.max(1, pot + toCall) : 0;
+    const blockerSuit = gameState.board.length && maxSuit >= 2
+      ? Object.entries(suits).find(([, count]) => count === maxSuit)?.[0]
+      : null;
+    const blocksFlush = Boolean(blockerSuit && player.hand.some(card => card[1] === blockerSuit));
+    return {
+      activePlayers,
+      multiway: activePlayers >= 3,
+      pairedBoard,
+      monotonePressure: maxSuit >= 3,
+      blocksFlush,
+      potOdds,
+      position: positionForSeat(seat, gameState)
+    };
+  }
+
+  function applyKnowledgePolicy(weights, signals, street, facingBet, draw) {
+    const adjusted = { ...weights };
+    const notes = [];
+    if (signals.multiway) {
+      if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.multiwayAggressionFactor;
+      if (adjusted.fold) adjusted.fold *= 1.12;
+      notes.push(`多人池 ${signals.activePlayers} 人：减少边缘诈唬，收紧薄价值`);
+    }
+    if (street !== "PREFLOP" && signals.pairedBoard) {
+      if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.pairedBoardAggressionFactor;
+      notes.push("公共牌成对：重注范围需要更明确的坚果与极化依据");
+    }
+    if (street !== "PREFLOP" && signals.monotonePressure) {
+      if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.monotoneBoardAggressionFactor;
+      notes.push("同花压力：减少无阻挡的边缘进攻");
+    }
+    if (facingBet && adjusted.call) {
+      if (signals.potOdds >= 0.32) {
+        adjusted.call *= KNOWLEDGE_POLICY.cheapCallFactor;
+        notes.push(`价格约 ${Math.round(signals.potOdds * 100)}%：提高有权益继续牌的跟注权重`);
+      } else if (signals.potOdds >= 0.2) {
+        adjusted.call *= KNOWLEDGE_POLICY.expensiveCallFactor;
+        notes.push(`价格约 ${Math.round(signals.potOdds * 100)}%：收紧没有足够权益实现的跟注`);
+      }
+    }
+    if (street !== "PREFLOP" && draw && signals.blocksFlush && adjusted.aggressive) {
+      adjusted.aggressive *= KNOWLEDGE_POLICY.blockerBluffFactor;
+      notes.push("手牌阻挡同花组合：保留少量更合适的半诈唬/施压组合");
+    }
+    if (!notes.length) notes.push("按节点、价格和范围结构维持基础混合");
+    return { weights: adjusted, notes };
+  }
+
   function normalizeGroupWeights(weights, candidates) {
     const availableGroups = new Set(candidates.map(item => item.group));
     const filtered = Object.fromEntries(Object.entries(weights).filter(([group]) => availableGroups.has(group)));
@@ -371,8 +441,10 @@
     const bet = gameState.currentBets.get(seat) || 0;
     const toCall = Math.max(0, currentBet(gameState) - bet);
     const facingBet = toCall > 0;
+    const signals = knowledgeSignals(seat, gameState, toCall);
     let weights;
     let reason;
+    let draw = false;
 
     if (gameState.street === "PREFLOP") {
       const details = preflopScore(player.hand);
@@ -395,7 +467,7 @@
       }
     } else {
       const profile = postflopProfile(seat);
-      const draw = profile.flushDraw || profile.straightDraw;
+      draw = profile.flushDraw || profile.straightDraw;
       const odds = facingBet ? toCall / Math.max(1, totalPot(gameState) + toCall) : 0;
       if (facingBet) {
         if (profile.strength >= 5) weights = { aggressive: 0.58, call: 0.4, fold: 0.02 };
@@ -416,6 +488,9 @@
       }
     }
 
+    const policy = applyKnowledgePolicy(weights, signals, gameState.street, facingBet, draw);
+    weights = policy.weights;
+    const knowledgeSummary = `${policy.notes.join("；")}。依据：${KNOWLEDGE_POLICY.sequence}。`;
     const groupWeights = normalizeGroupWeights(weights, candidates);
     const entries = [];
     Object.entries(groupWeights).forEach(([group, groupFrequency]) => {
@@ -432,7 +507,7 @@
       }));
     });
     entries.sort((a, b) => b.frequency - a.frequency);
-    return { entries, reason, groupWeights };
+    return { entries, reason, groupWeights, knowledgeSummary, knowledgeSignals: signals, knowledgeSources: KNOWLEDGE_POLICY.sources };
   }
 
   function chooseMixedAction(strategy) {
@@ -550,7 +625,8 @@
       price: priceText,
       structure: structureText,
       frequency: `你的行动在当前近似策略中占 ${chosenFrequency}%，最高频行动占 ${topFrequency}%。频率用于比较策略结构，不是精确 Solver 输出。`,
-      knowledge: "知识库检查项：先还原节点和范围，再计算价格，随后构造价值与诈唬，最后才用阻挡牌选择具体组合。"
+      knowledge: strategy.knowledgeSummary,
+      sources: strategy.knowledgeSources
     };
   }
 
@@ -931,6 +1007,7 @@
       details.append(reviewDetailNode("你的选择", decisionFeedback(decision)));
       if (analysis.frequency) details.append(reviewDetailNode("频率边界", analysis.frequency));
       if (analysis.knowledge) details.append(reviewDetailNode("复盘顺序", analysis.knowledge));
+      if (analysis.sources) details.append(reviewDetailNode("知识来源", analysis.sources));
       card.append(header, comparison, distributionNode(decision.distribution), details);
       card.addEventListener("click", () => {
         const matching = review.timeline.findIndex(step => step.actorSeat === HERO_SEAT
