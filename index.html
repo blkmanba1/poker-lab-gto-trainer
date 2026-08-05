@@ -999,7 +999,7 @@
       <button type="button" data-mode="mixed" aria-pressed="true">混合</button>
       <button type="button" data-mode="preflop" aria-pressed="false">翻前</button>
       <button type="button" data-mode="postflop" aria-pressed="false">翻后</button>
-      <button type="button" data-mode="live" aria-pressed="false">实战桌</button>
+      <button type="button" data-mode="live" aria-pressed="false">对战桌</button>
     </nav>
 
     <div class="scoreboard">
@@ -1076,13 +1076,14 @@
   </main>
 
   <main class="live-workspace" id="live-workspace" hidden>
-    <section class="live-table-panel" aria-label="六人实战模拟牌桌">
+    <section class="live-table-panel" aria-label="六人现金对战牌桌">
       <header class="live-table-header">
         <div>
           <p class="eyebrow">6-MAX · 100BB · 无前注</p>
-          <h2>实战模拟桌</h2>
+          <h2>六人现金对战</h2>
         </div>
         <div class="live-hand-meta">
+          <button class="live-history-button" type="button" id="live-history-button" disabled>牌谱</button>
           <span id="live-hand-number">第 1 手</span>
           <span id="live-street">翻前</span>
         </div>
@@ -1101,35 +1102,48 @@
       </div>
 
       <footer class="live-table-footer">
-        <span><i class="status-dot active"></i> 教学对局</span>
-        <span>随机牌局 · 本机运行</span>
+        <span><i class="status-dot active"></i> 近似 GTO 机器人</span>
+        <span id="live-session-net">本场盈亏 0BB</span>
       </footer>
     </section>
 
     <aside class="live-control-panel">
+      <div class="live-session-strip">
+        <span><small>手数</small><strong id="live-session-hands">0</strong></span>
+        <span><small>决策贴合度</small><strong id="live-session-score">—</strong></span>
+        <span><small>当前筹码</small><strong id="live-hero-stack">100BB</strong></span>
+      </div>
+
       <section class="live-decision-block">
-        <p class="eyebrow" id="live-node-label">等待发牌</p>
-        <h2 id="live-prompt">你会怎么做？</h2>
+        <p class="eyebrow" id="live-node-label">牌桌准备中</p>
+        <h2 id="live-prompt">等待发牌</h2>
         <p class="live-context" id="live-context"></p>
         <div class="live-actions" id="live-actions"></div>
+        <div class="live-bet-control" id="live-bet-control" hidden>
+          <div><label for="live-bet-slider">自定义加注</label><output id="live-bet-output">6BB</output></div>
+          <input type="range" id="live-bet-slider" min="4" max="200" value="6" step="0.5">
+          <button type="button" id="live-bet-confirm">确认下注</button>
+        </div>
       </section>
 
-      <section class="live-recommendation" id="live-recommendation" aria-live="polite" hidden>
+      <section class="live-recommendation live-hand-result" id="live-hand-result" aria-live="polite" hidden>
         <div class="recommendation-heading">
           <span id="live-result-mark"></span>
-          <div><small>教学推荐线路</small><strong id="live-best-action"></strong></div>
+          <div><small>本手结束</small><strong id="live-result-title"></strong></div>
         </div>
-        <p id="live-reason"></p>
-        <div class="live-plan" id="live-plan"></div>
-        <button class="live-continue-button" type="button" id="live-continue-button">继续到翻牌</button>
+        <p id="live-result-copy"></p>
+        <div class="live-result-actions">
+          <button class="live-review-button" type="button" id="live-review-button">复盘本手</button>
+          <button class="live-continue-button" type="button" id="live-next-hand-button">下一手</button>
+        </div>
       </section>
 
       <section class="live-line-card">
-        <div class="live-line-title"><h3>本手线路</h3><span id="live-hero-position">BTN</span></div>
-        <ol id="live-line-log"><li class="pending">发牌后开始记录</li></ol>
+        <div class="live-line-title"><h3>实时行动</h3><span id="live-hero-position">BTN</span></div>
+        <ol id="live-line-log"><li class="pending">牌局开始后记录行动</li></ol>
       </section>
 
-      <p class="live-boundary">推荐是基于位置、价格、牌力、听牌和牌面结构的教学策略基线，不是指定范围与下注树下的精确 Solver 输出。</p>
+      <p class="live-boundary">机器人使用位置范围、牌力、听牌、赔率和随机混合频率的近似 GTO 策略。它是可对战策略引擎，不是商业 Solver 的精确输出。</p>
     </aside>
   </main>
 
@@ -1147,6 +1161,39 @@
     <footer class="wrong-dialog-footer">
       <button class="clear-wrong-button" type="button" id="clear-wrong-button">清空错题本</button>
     </footer>
+  </dialog>
+
+  <dialog class="live-review-dialog" id="live-review-dialog" aria-labelledby="live-review-title">
+    <header class="live-review-header">
+      <div>
+        <p class="eyebrow">HAND REVIEW · 复盘透视</p>
+        <h2 id="live-review-title">本手复盘</h2>
+      </div>
+      <div class="live-review-header-actions">
+        <select id="live-review-hand-select" aria-label="选择历史牌局"></select>
+        <button class="dialog-close" type="button" id="live-review-close" aria-label="关闭复盘">×</button>
+      </div>
+    </header>
+    <div class="live-review-summary" id="live-review-summary"></div>
+    <div class="live-review-layout">
+      <section class="live-replay-panel" aria-label="动作回放">
+        <div class="live-replay-table">
+          <div class="live-replay-board" id="live-review-board"></div>
+          <strong id="live-review-pot">底池 1.5BB</strong>
+          <div class="live-replay-seats" id="live-review-seats"></div>
+        </div>
+        <div class="live-replay-controls">
+          <button type="button" id="live-review-prev" aria-label="上一步">←</button>
+          <input type="range" id="live-review-slider" min="0" max="0" value="0" step="1" aria-label="复盘进度">
+          <button type="button" id="live-review-next" aria-label="下一步">→</button>
+        </div>
+        <p class="live-replay-caption" id="live-review-caption">发牌</p>
+      </section>
+      <aside class="live-review-analysis">
+        <h3>你的决策</h3>
+        <div id="live-review-decisions"></div>
+      </aside>
+    </div>
   </dialog>
 
   <script>
@@ -1690,12 +1737,13 @@
       document.getElementById("quiz-workspace").hidden = isLive;
       document.getElementById("live-workspace").hidden = !isLive;
       document.body.classList.toggle("live-mode", isLive);
-      elements["reset-button"].title = isLive ? "重新发牌" : "重置成绩";
-      elements["reset-button"].setAttribute("aria-label", isLive ? "重新发牌" : "重置成绩");
+      elements["reset-button"].title = isLive ? "重新开桌" : "重置成绩";
+      elements["reset-button"].setAttribute("aria-label", isLive ? "重新开桌" : "重置成绩");
       if (isLive) {
         window.LivePractice?.enter();
         return;
       }
+      window.LivePractice?.leave?.();
       nextScenario();
     });
 
@@ -1726,6 +1774,7 @@
     nextScenario();
   </script>
   <script src="vendor/pokersolver.min.js?v=20260805-2"></script>
-  <script src="live-practice.js?v=20260805-2"></script>
+  <script src="vendor/pokertools-engine.min.js?v=20260805-3"></script>
+  <script src="live-practice.js?v=20260805-3"></script>
 </body>
 </html>

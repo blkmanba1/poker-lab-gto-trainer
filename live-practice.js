@@ -1,164 +1,306 @@
 (() => {
   "use strict";
 
+  const SCALE = 2;
+  const STARTING_STACK = 200;
+  const HERO_SEAT = 0;
+  const HERO_ID = "hero";
+  const REVIEW_STORAGE_KEY = "poker-lab-match-reviews";
   const POSITIONS = ["BTN", "SB", "BB", "UTG", "HJ", "CO"];
-  const STREET_NAMES = { preflop: "翻前", flop: "翻牌", turn: "转牌", river: "河牌", showdown: "摊牌" };
-  const NEXT_STREET = { preflop: "flop", flop: "turn", turn: "river", river: "showdown" };
-  const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
-  const SUITS = ["s", "h", "d", "c"];
+  const STREET_LABELS = { PREFLOP: "翻前", FLOP: "翻牌", TURN: "转牌", RIVER: "河牌", SHOWDOWN: "摊牌" };
   const SUIT_SYMBOL = { s: "♠", h: "♥", d: "♦", c: "♣" };
-  const PLAYER_NAMES = ["你", "Mina", "River", "Theo", "Nova", "Alex"];
+  const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+  const TABLE_PLAYERS = [
+    { id: HERO_ID, name: "你" },
+    { id: "bot-mina", name: "Mina" },
+    { id: "bot-river", name: "River" },
+    { id: "bot-theo", name: "Theo" },
+    { id: "bot-nova", name: "Nova" },
+    { id: "bot-alex", name: "Alex" }
+  ];
 
-  const el = Object.fromEntries([
-    "live-workspace", "live-table-shell", "live-hand-number", "live-street", "live-board", "live-pot",
-    "live-seats", "live-action-bubble", "live-node-label", "live-prompt", "live-context", "live-actions",
-    "live-recommendation", "live-result-mark", "live-best-action", "live-reason", "live-plan",
-    "live-continue-button", "live-hero-position", "live-line-log"
-  ].map(id => [id, document.getElementById(id)]));
+  const ids = [
+    "live-table-shell", "live-hand-number", "live-street", "live-board", "live-pot", "live-seats",
+    "live-action-bubble", "live-node-label", "live-prompt", "live-context", "live-actions",
+    "live-bet-control", "live-bet-slider", "live-bet-output", "live-bet-confirm", "live-hand-result",
+    "live-result-mark", "live-result-title", "live-result-copy", "live-review-button", "live-next-hand-button",
+    "live-history-button", "live-hero-position", "live-line-log", "live-session-net", "live-session-hands",
+    "live-session-score", "live-hero-stack", "live-review-dialog", "live-review-close", "live-review-title",
+    "live-review-hand-select", "live-review-summary", "live-review-board", "live-review-pot",
+    "live-review-seats", "live-review-prev", "live-review-next", "live-review-slider",
+    "live-review-caption", "live-review-decisions"
+  ];
+  const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
 
   const state = {
+    engine: null,
     initialized: false,
-    handNumber: 0,
-    dealerSeat: -1,
-    street: "preflop",
-    deck: [],
-    holeCards: [],
-    board: [],
-    positions: [],
-    opponentSeat: 0,
-    stacks: Array(6).fill(100),
-    pot: 1.5,
-    node: null,
-    recommendation: null,
-    chosen: null,
-    line: [],
-    handOver: false
+    active: false,
+    handRunning: false,
+    botTimer: null,
+    bubbleTimer: null,
+    handStartHeroStack: STARTING_STACK,
+    heroBuyIns: STARTING_STACK,
+    timeline: [],
+    decisions: [],
+    liveLog: [],
+    reviews: loadReviews(),
+    currentReview: null,
+    reviewStep: 0,
+    sessionHands: 0,
+    sessionDecisionPoints: 0,
+    sessionDecisionScore: 0,
+    customAction: null
   };
 
-  function secureRandomInt(max) {
-    if (!Number.isInteger(max) || max <= 0) throw new RangeError("max must be a positive integer");
-    const range = 0x100000000;
-    const limit = Math.floor(range / max) * max;
-    const value = new Uint32Array(1);
-    do crypto.getRandomValues(value); while (value[0] >= limit);
-    return value[0] % max;
-  }
-
-  function chance(percent) {
-    return secureRandomInt(100) < percent;
-  }
-
-  function shuffledDeck() {
-    const cards = SUITS.flatMap(suit => RANKS.map(rank => `${rank}${suit}`));
-    for (let i = cards.length - 1; i > 0; i -= 1) {
-      const j = secureRandomInt(i + 1);
-      [cards[i], cards[j]] = [cards[j], cards[i]];
+  function loadReviews() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(REVIEW_STORAGE_KEY));
+      return Array.isArray(stored) ? stored.slice(0, 20) : [];
+    } catch {
+      return [];
     }
-    return cards;
   }
 
-  function positionForSeat(seat) {
-    return POSITIONS[(seat - state.dealerSeat + 6) % 6];
+  function saveReviews() {
+    localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(state.reviews.slice(0, 20)));
   }
 
-  function seatForPosition(position) {
-    return state.positions.indexOf(position);
+  function secureRandom() {
+    const value = new Uint32Array(1);
+    crypto.getRandomValues(value);
+    return value[0] / 0x100000000;
+  }
+
+  function chipsToBb(chips) {
+    return chips / SCALE;
+  }
+
+  function formatBb(chips, withUnit = true) {
+    const value = Number(chipsToBb(chips).toFixed(1));
+    return `${value}${withUnit ? "BB" : ""}`;
+  }
+
+  function signedBb(chips) {
+    const value = Number(chipsToBb(chips).toFixed(1));
+    return `${value > 0 ? "+" : ""}${value}BB`;
+  }
+
+  function totalPot(gameState = state.engine.state) {
+    const pots = gameState.pots.reduce((sum, pot) => sum + pot.amount, 0);
+    const bets = [...gameState.currentBets.values()].reduce((sum, amount) => sum + amount, 0);
+    const settled = gameState.winners?.reduce((sum, winner) => sum + winner.amount, 0) || 0;
+    return Math.max(pots + bets, settled);
+  }
+
+  function currentBet(gameState = state.engine.state) {
+    return Math.max(0, ...gameState.currentBets.values());
+  }
+
+  function positionForSeat(seat, gameState = state.engine.state) {
+    if (gameState.buttonSeat === null) return "—";
+    return POSITIONS[(seat - gameState.buttonSeat + 6) % 6];
   }
 
   function displayCard(card) {
-    return `${card[0]}${SUIT_SYMBOL[card[1]]}`;
+    return card ? `${card[0]}${SUIT_SYMBOL[card[1]]}` : "";
   }
 
-  function cardNode(card, hidden = false) {
+  function cardNode(card, hidden = false, compact = false) {
     const node = document.createElement("span");
-    if (hidden) {
-      node.className = "live-card back";
+    if (hidden || !card) {
+      node.className = `live-card back${compact ? " compact" : ""}`;
       node.setAttribute("aria-label", "暗牌");
       return node;
     }
     const suit = SUIT_SYMBOL[card[1]];
-    node.className = `live-card ${/[hd]/.test(card[1]) ? "red" : "black"}`;
+    node.className = `live-card ${/[hd]/.test(card[1]) ? "red" : "black"}${compact ? " compact" : ""}`;
     node.textContent = card[0];
     node.dataset.suit = suit;
     node.setAttribute("aria-label", displayCard(card));
     return node;
   }
 
-  function formatBb(value) {
-    return `${Number(value.toFixed(1))}BB`;
+  function setBubble(text) {
+    clearTimeout(state.bubbleTimer);
+    el["live-action-bubble"].textContent = text;
+    el["live-action-bubble"].hidden = false;
+    state.bubbleTimer = setTimeout(() => { el["live-action-bubble"].hidden = true; }, 1150);
   }
 
-  function renderSeats(revealOpponent = false) {
-    el["live-seats"].replaceChildren();
-    for (let seat = 0; seat < 6; seat += 1) {
-      const wrapper = document.createElement("div");
-      const isHero = seat === 0;
-      const isOpponent = seat === state.opponentSeat;
-      wrapper.className = `live-seat${isHero ? " hero" : ""}${isOpponent ? " opponent" : ""}${!isHero && !isOpponent ? " folded" : ""}`;
-      wrapper.dataset.index = seat;
-
-      const cards = document.createElement("div");
-      cards.className = "live-seat-cards";
-      const shouldReveal = isHero || (isOpponent && revealOpponent);
-      state.holeCards[seat].forEach(card => cards.append(cardNode(card, !shouldReveal)));
-
-      const info = document.createElement("div");
-      info.className = "live-seat-info";
-      const avatar = document.createElement("span");
-      avatar.className = "live-avatar";
-      avatar.textContent = isHero ? "YOU" : PLAYER_NAMES[seat][0];
-      const name = document.createElement("span");
-      name.className = "live-seat-name";
-      name.textContent = PLAYER_NAMES[seat];
-      const stack = document.createElement("span");
-      stack.className = "live-seat-stack";
-      stack.textContent = formatBb(state.stacks[seat]);
-      const position = document.createElement("span");
-      position.className = "live-position";
-      position.textContent = state.positions[seat];
-      info.append(avatar, name, stack, position);
-      wrapper.append(cards, info);
-      el["live-seats"].append(wrapper);
-    }
+  function addLog(text) {
+    state.liveLog.push(text);
+    state.liveLog = state.liveLog.slice(-9);
+    el["live-line-log"].replaceChildren();
+    state.liveLog.forEach(line => {
+      const li = document.createElement("li");
+      li.textContent = line;
+      el["live-line-log"].append(li);
+    });
   }
 
-  function visibleBoardCount() {
-    return { preflop: 0, flop: 3, turn: 4, river: 5, showdown: 5 }[state.street];
-  }
-
-  function renderBoard() {
+  function renderBoard(gameState = state.engine.state) {
     el["live-board"].replaceChildren();
-    state.board.slice(0, visibleBoardCount()).forEach((card, index) => {
+    gameState.board.forEach((card, index) => {
       const node = cardNode(card);
       node.style.animationDelay = `${index * 55}ms`;
       el["live-board"].append(node);
     });
   }
 
-  function renderTable(revealOpponent = false) {
-    renderSeats(revealOpponent);
-    renderBoard();
-    el["live-pot"].textContent = `底池 ${formatBb(state.pot)}`;
-    el["live-hand-number"].textContent = `第 ${state.handNumber} 手`;
-    el["live-street"].textContent = STREET_NAMES[state.street];
-    el["live-hero-position"].textContent = state.positions[0];
+  function shouldRevealSeat(seat, gameState) {
+    if (seat === HERO_SEAT) return true;
+    if (gameState.street !== "SHOWDOWN") return false;
+    return gameState.players[seat]?.status !== "FOLDED";
   }
 
-  function setBubble(text) {
-    el["live-action-bubble"].textContent = text;
-    el["live-action-bubble"].hidden = false;
-    clearTimeout(setBubble.timer);
-    setBubble.timer = setTimeout(() => { el["live-action-bubble"].hidden = true; }, 1500);
-  }
+  function renderSeats(gameState = state.engine.state) {
+    el["live-seats"].replaceChildren();
+    gameState.players.forEach((player, seat) => {
+      if (!player) return;
+      const wrapper = document.createElement("div");
+      const isHero = seat === HERO_SEAT;
+      const isActor = gameState.actionTo === seat;
+      const isFolded = player.status === "FOLDED";
+      const isAllIn = player.status === "ALL_IN";
+      wrapper.className = `live-seat${isHero ? " hero" : ""}${isActor ? " actor" : ""}${isFolded ? " folded" : ""}${isAllIn ? " all-in" : ""}`;
+      wrapper.dataset.index = seat;
 
-  function addLine(text) {
-    state.line.push(text);
-    el["live-line-log"].replaceChildren();
-    state.line.forEach(item => {
-      const li = document.createElement("li");
-      li.textContent = item;
-      el["live-line-log"].append(li);
+      const cards = document.createElement("div");
+      cards.className = "live-seat-cards";
+      const reveal = shouldRevealSeat(seat, gameState);
+      (player.hand || [null, null]).forEach(card => cards.append(cardNode(card, !reveal)));
+
+      const info = document.createElement("div");
+      info.className = "live-seat-info";
+      const avatar = document.createElement("span");
+      avatar.className = "live-avatar";
+      avatar.textContent = isHero ? "YOU" : player.name[0];
+      const name = document.createElement("span");
+      name.className = "live-seat-name";
+      name.textContent = player.name;
+      const stack = document.createElement("span");
+      stack.className = "live-seat-stack";
+      stack.textContent = player.status === "BUSTED" ? "等待补码" : formatBb(player.stack);
+      const position = document.createElement("span");
+      position.className = "live-position";
+      position.textContent = positionForSeat(seat, gameState);
+      info.append(avatar, name, stack, position);
+
+      const bet = gameState.currentBets.get(seat) || 0;
+      if (bet > 0) {
+        const betNode = document.createElement("span");
+        betNode.className = "live-seat-bet";
+        betNode.textContent = formatBb(bet);
+        wrapper.append(betNode);
+      }
+      if (isAllIn) {
+        const allIn = document.createElement("span");
+        allIn.className = "live-all-in-label";
+        allIn.textContent = "ALL-IN";
+        wrapper.append(allIn);
+      }
+      wrapper.append(cards, info);
+      el["live-seats"].append(wrapper);
     });
+  }
+
+  function renderSession() {
+    const hero = state.engine?.state.players[HERO_SEAT];
+    const net = hero ? hero.stack - state.heroBuyIns : 0;
+    const score = state.sessionDecisionPoints
+      ? `${Math.round(state.sessionDecisionScore / state.sessionDecisionPoints)}%`
+      : "—";
+    el["live-session-hands"].textContent = String(state.sessionHands);
+    el["live-session-score"].textContent = score;
+    el["live-hero-stack"].textContent = hero ? formatBb(hero.stack) : "100BB";
+    el["live-session-net"].textContent = `本场盈亏 ${signedBb(net)}`;
+  }
+
+  function renderTable() {
+    const gameState = state.engine.state;
+    renderBoard(gameState);
+    renderSeats(gameState);
+    el["live-pot"].textContent = `底池 ${formatBb(totalPot(gameState))}`;
+    el["live-hand-number"].textContent = `第 ${gameState.handNumber} 手`;
+    el["live-street"].textContent = STREET_LABELS[gameState.street];
+    el["live-hero-position"].textContent = positionForSeat(HERO_SEAT, gameState);
+    renderSession();
+  }
+
+  function clearControls() {
+    el["live-actions"].replaceChildren();
+    el["live-bet-control"].hidden = true;
+    state.customAction = null;
+  }
+
+  function setStatus(label, prompt, context) {
+    el["live-node-label"].textContent = label;
+    el["live-prompt"].textContent = prompt;
+    el["live-context"].textContent = context;
+  }
+
+  function candidateKey(action) {
+    return `${action.type}:${"amount" in action ? action.amount : ""}`;
+  }
+
+  function legalCandidates(seat) {
+    const gameState = state.engine.state;
+    const player = gameState.players[seat];
+    if (!player || gameState.actionTo !== seat) return [];
+    const playerId = player.id;
+    const bet = gameState.currentBets.get(seat) || 0;
+    const highBet = currentBet(gameState);
+    const toCall = Math.max(0, highBet - bet);
+    const pot = totalPot(gameState);
+    const candidates = [];
+
+    const add = (action, label, group, size = null) => {
+      if (!state.engine.validate(action).valid) return;
+      const key = candidateKey(action);
+      if (candidates.some(item => item.key === key)) return;
+      candidates.push({ action, label, group, size, key });
+    };
+
+    if (toCall > 0) {
+      add({ type: "FOLD", playerId }, "弃牌", "fold");
+      add({ type: "CALL", playerId }, `跟注 ${formatBb(Math.min(toCall, player.stack))}`, "call");
+    } else {
+      add({ type: "CHECK", playerId }, "过牌", "check");
+    }
+
+    const maxTotal = bet + player.stack;
+    if (highBet === 0) {
+      const sizes = [
+        Math.max(gameState.bigBlind, Math.round(pot * 0.33)),
+        Math.max(gameState.bigBlind, Math.round(pot * 0.75)),
+        player.stack
+      ];
+      sizes.forEach((amount, index) => {
+        const capped = Math.min(player.stack, amount);
+        const allIn = capped === player.stack;
+        add(
+          { type: "BET", playerId, amount: capped },
+          allIn ? `全下 ${formatBb(capped)}` : `下注 ${formatBb(capped)}`,
+          "aggressive",
+          allIn ? "allin" : index === 0 ? "small" : "large"
+        );
+      });
+    } else {
+      const raisePot = Math.round(highBet + (pot + toCall) * 0.7);
+      const sizes = [state.engine.state.minRaise, raisePot, maxTotal];
+      sizes.forEach((amount, index) => {
+        const capped = Math.min(maxTotal, Math.max(highBet + 1, amount));
+        const allIn = capped === maxTotal;
+        add(
+          { type: "RAISE", playerId, amount: capped },
+          allIn ? `全下到 ${formatBb(capped)}` : `加注到 ${formatBb(capped)}`,
+          "aggressive",
+          allIn ? "allin" : index === 0 ? "small" : "large"
+        );
+      });
+    }
+    return candidates;
   }
 
   function rankValue(rank) {
@@ -181,134 +323,6 @@
     return { score, high, low, pair, suited, gap };
   }
 
-  function chooseOpponent(candidates) {
-    const valid = candidates.map(seatForPosition).filter(seat => seat > 0);
-    return valid.length ? valid[secureRandomInt(valid.length)] : 1;
-  }
-
-  function createPreflopNode() {
-    const heroPos = state.positions[0];
-    const roll = secureRandomInt(100);
-    let type = "unopened";
-    if (heroPos === "BB") type = "facingOpen";
-    else if (heroPos !== "UTG" && roll < 34) type = "facingOpen";
-    else if (roll >= 78) type = "facing3bet";
-
-    if (type === "unopened") {
-      state.opponentSeat = chooseOpponent(heroPos === "SB" ? ["BB"] : ["BB", "SB"]);
-      state.pot = 1.5;
-      return {
-        type,
-        opponentAction: "前位玩家均弃牌到你",
-        prompt: `${heroPos} 首入池怎么行动？`,
-        context: `有效筹码 100BB，盲注 0.5/1BB。${state.positions[state.opponentSeat]} 在后续等待。`,
-        actions: [
-          { key: "fold", label: "弃牌" },
-          { key: "raise", label: "加注到 2.5BB", aggressive: true }
-        ]
-      };
-    }
-
-    if (type === "facingOpen") {
-      const openersByHero = {
-        HJ: ["UTG"], CO: ["UTG", "HJ"], BTN: ["HJ", "CO"],
-        SB: ["CO", "BTN"], BB: ["UTG", "HJ", "CO", "BTN", "SB"]
-      };
-      state.opponentSeat = chooseOpponent(openersByHero[heroPos] || ["UTG"]);
-      const opener = state.positions[state.opponentSeat];
-      state.pot = opener === "SB" ? 3.5 : 4;
-      state.stacks[state.opponentSeat] -= opener === "SB" ? 2.5 : 2.5;
-      return {
-        type,
-        opener,
-        opponentAction: `${opener} 加注到 2.5BB，其余玩家弃牌`,
-        prompt: `面对 ${opener} 加注怎么行动？`,
-        context: `${heroPos} 对 ${opener}，有效筹码约 97.5BB，当前底池 ${formatBb(state.pot)}。`,
-        actions: [
-          { key: "fold", label: "弃牌" },
-          { key: "call", label: "跟注 2.5BB" },
-          { key: "raise", label: "3Bet 到 9BB", aggressive: true }
-        ]
-      };
-    }
-
-    state.opponentSeat = chooseOpponent(["SB", "BB", "BTN", "CO"]);
-    const aggressor = state.positions[state.opponentSeat];
-    state.pot = 12.5;
-    state.stacks[0] -= 2.5;
-    state.stacks[state.opponentSeat] -= 9;
-    return {
-      type,
-      opener: aggressor,
-      opponentAction: `你加注到 2.5BB，${aggressor} 3Bet 到 9BB`,
-      prompt: `面对 ${aggressor} 3Bet 怎么行动？`,
-      context: `${heroPos} 对 ${aggressor}，你还需投入 6.5BB，当前底池 12.5BB。`,
-      actions: [
-        { key: "fold", label: "弃牌" },
-        { key: "call", label: "跟注 6.5BB" },
-        { key: "raise", label: "4Bet 到 22BB", aggressive: true }
-      ]
-    };
-  }
-
-  function preflopRecommendation() {
-    const details = preflopScore(state.holeCards[0]);
-    const heroPos = state.positions[0];
-    const hand = state.holeCards[0].map(displayCard).join(" ");
-    let action = "fold";
-    let reason;
-    let plan;
-
-    if (state.node.type === "unopened") {
-      const threshold = { UTG: 65, HJ: 59, CO: 51, BTN: 44, SB: 48 }[heroPos] || 60;
-      action = details.score >= threshold ? "raise" : "fold";
-      reason = action === "raise"
-        ? `${hand} 达到 ${heroPos} 常用首入池基线。牌力与位置允许你主动争夺盲注，并用统一加注尺度保持范围完整。`
-        : `${hand} 在 ${heroPos} 的实现权益有限。首入池范围需要受位置约束，直接弃牌比用边缘牌制造弱范围更稳健。`;
-      plan = action === "raise" ? "被盲位跟注后进入单加注底池，翻牌根据范围优势和牌面结构决定是否小注。" : "结束本手，下一手继续按位置轮转。";
-    } else if (state.node.type === "facingOpen") {
-      const openerTightness = { UTG: 8, HJ: 5, CO: 1, BTN: -3, SB: -4 }[state.node.opener] || 0;
-      const callThreshold = (heroPos === "BB" ? 49 : 61) + openerTightness;
-      if (details.score >= 88 || (details.pair && details.high >= 12)) action = "raise";
-      else if (details.score >= callThreshold) action = "call";
-      reason = action === "raise"
-        ? `${hand} 位于对抗 ${state.node.opener} 开池范围的价值 3Bet 区间，主动加注可以建立底池并降低多人入池概率。`
-        : action === "call"
-          ? `${hand} 对当前开池范围和价格有足够继续权益。跟注保留对手的弱牌，同时控制边缘牌的底池规模。`
-          : `${hand} 对 ${state.node.opener} 的开池范围缺少足够权益或可实现性，继续会在翻后频繁陷入被支配局面。`;
-      plan = action === "fold" ? "结束本手。" : action === "raise" ? "对手跟注后以 3Bet 底池进入翻牌，优先关注高牌面的小尺度持续下注。" : "进入单加注底池；有位置时扩大可实现权益，无位置时减少边缘跟注。";
-    } else {
-      if (details.score >= 94 || (details.pair && details.high >= 13)) action = "raise";
-      else if (details.score >= 72 || (details.pair && details.high >= 9)) action = "call";
-      reason = action === "raise"
-        ? `${hand} 足以进入对抗 3Bet 的价值 4Bet 区间。用小 4Bet 保留对手继续范围，同时为后续街建立低 SPR。`
-        : action === "call"
-          ? `${hand} 有足够权益继续，但直接 4Bet 会隔离掉许多较弱牌。跟注能保留对手的诈唬并利用位置或牌型可玩性。`
-          : `${hand} 面对 3Bet 的价格和强范围难以盈利实现权益。放弃此前投入，避免沉没成本影响决策。`;
-      plan = action === "fold" ? "结束本手。" : "进入 3Bet 或 4Bet 底池，低 SPR 下更重视顶对以上牌力，减少无后门的浮动。";
-    }
-    return { action, reason, plan };
-  }
-
-  function knownCards() {
-    return [...state.holeCards[0], ...state.board.slice(0, visibleBoardCount())];
-  }
-
-  function solve(cards) {
-    if (!window.PokerSolver?.Hand) throw new Error("牌型计算器未加载");
-    return window.PokerSolver.Hand.solve(cards);
-  }
-
-  function handLabel(hand) {
-    const rank = hand.cards?.[0]?.value?.replace("T", "10") || "";
-    const labels = {
-      "High Card": `${rank}高`, Pair: `${rank}对`, "Two Pair": "两对",
-      "Three of a Kind": "三条", Straight: "顺子", Flush: "同花",
-      "Full House": "葫芦", "Four of a Kind": "四条", "Straight Flush": "同花顺"
-    };
-    return hand.descr === "Royal Flush" ? "皇家同花顺" : labels[hand.name] || hand.name;
-  }
-
   function straightDraw(cards) {
     const values = new Set(cards.map(card => rankValue(card[0])));
     if (values.has(14)) values.add(1);
@@ -320,292 +334,597 @@
     return false;
   }
 
-  function boardTexture() {
-    const visible = state.board.slice(0, visibleBoardCount());
-    const suitCounts = visible.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
-    const paired = new Set(visible.map(card => card[0])).size < visible.length;
-    const values = visible.map(card => rankValue(card[0])).sort((a, b) => a - b);
-    const connected = values.some((value, index) => index && value - values[index - 1] <= 2);
-    const monotone = Object.values(suitCounts).some(count => count >= 3);
-    const wet = monotone || (connected && Object.values(suitCounts).some(count => count >= 2));
-    return { paired, connected, monotone, wet };
-  }
-
-  function postflopProfile() {
-    const cards = knownCards();
-    const hand = solve(cards);
-    const category = hand.name;
-    const categoryStrength = {
+  function postflopProfile(seat) {
+    const gameState = state.engine.state;
+    const cards = [...gameState.players[seat].hand, ...gameState.board];
+    const hand = window.PokerSolver.Hand.solve(cards);
+    const baseStrength = {
       "High Card": 0, Pair: 1, "Two Pair": 4, "Three of a Kind": 4,
       Straight: 5, Flush: 5, "Full House": 6, "Four of a Kind": 6, "Straight Flush": 6
-    }[category] ?? 0;
-    let strength = categoryStrength;
-    const board = state.board.slice(0, visibleBoardCount());
-    const heroRanks = state.holeCards[0].map(card => rankValue(card[0]));
-    const boardRanks = board.map(card => rankValue(card[0]));
+    }[hand.name] ?? 0;
+    let strength = baseStrength;
+    const holeRanks = gameState.players[seat].hand.map(card => rankValue(card[0]));
+    const boardRanks = gameState.board.map(card => rankValue(card[0]));
     const topBoard = Math.max(...boardRanks);
-    const pocketPair = heroRanks[0] === heroRanks[1];
-    const topPair = heroRanks.includes(topBoard);
-    if (category === "Pair" && (topPair || (pocketPair && heroRanks[0] > topBoard))) strength = 3;
-    else if (category === "Pair") strength = 2;
+    const pocketPair = holeRanks[0] === holeRanks[1];
+    if (hand.name === "Pair" && (holeRanks.includes(topBoard) || (pocketPair && holeRanks[0] > topBoard))) strength = 3;
+    else if (hand.name === "Pair") strength = 2;
 
-    const allSuits = cards.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
-    const flushDraw = visibleBoardCount() < 5 && Object.values(allSuits).some(count => count === 4);
-    const hasStraightDraw = visibleBoardCount() < 5 && straightDraw(cards);
-    const overcards = category === "High Card" && heroRanks.filter(rank => rank > topBoard).length;
-    return { hand, category, strength, flushDraw, straightDraw: hasStraightDraw, overcards, texture: boardTexture() };
+    const suits = cards.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
+    const flushDraw = gameState.board.length < 5 && Object.values(suits).some(count => count === 4);
+    const hasStraightDraw = gameState.board.length < 5 && straightDraw(cards);
+    return { hand, strength, flushDraw, straightDraw: hasStraightDraw };
   }
 
-  function heroActsFirst() {
-    const order = ["SB", "BB", "UTG", "HJ", "CO", "BTN"];
-    return order.indexOf(state.positions[0]) < order.indexOf(state.positions[state.opponentSeat]);
+  function normalizeGroupWeights(weights, candidates) {
+    const availableGroups = new Set(candidates.map(item => item.group));
+    const filtered = Object.fromEntries(Object.entries(weights).filter(([group]) => availableGroups.has(group)));
+    if (!Object.keys(filtered).length) filtered[candidates[0].group] = 1;
+    const total = Object.values(filtered).reduce((sum, value) => sum + value, 0) || 1;
+    Object.keys(filtered).forEach(group => { filtered[group] /= total; });
+    return filtered;
   }
 
-  function createPostflopNode() {
-    const opponentPos = state.positions[state.opponentSeat];
-    const first = heroActsFirst();
-    let opponentAction = "";
-    let facingBet = false;
-    let betSize = 0;
+  function strategyFor(seat, candidates) {
+    const gameState = state.engine.state;
+    const player = gameState.players[seat];
+    const bet = gameState.currentBets.get(seat) || 0;
+    const toCall = Math.max(0, currentBet(gameState) - bet);
+    const facingBet = toCall > 0;
+    let weights;
+    let reason;
 
-    if (!first) {
-      facingBet = chance(state.street === "river" ? 36 : 42);
-      if (facingBet) {
-        const fraction = chance(62) ? .33 : .66;
-        betSize = Math.max(.5, Math.round(state.pot * fraction * 2) / 2);
-        state.pot += betSize;
-        state.stacks[state.opponentSeat] = Math.max(0, state.stacks[state.opponentSeat] - betSize);
-        opponentAction = `${opponentPos} 下注 ${formatBb(betSize)}（约 ${Math.round(fraction * 100)}% 底池）`;
+    if (gameState.street === "PREFLOP") {
+      const details = preflopScore(player.hand);
+      const position = positionForSeat(seat, gameState);
+      const unopened = currentBet(gameState) <= gameState.bigBlind;
+      const openThreshold = { UTG: 65, HJ: 59, CO: 51, BTN: 44, SB: 48, BB: 50 }[position];
+      if (unopened) {
+        if (details.score >= openThreshold + 20) weights = { aggressive: 0.88, call: 0.08, check: 0.08, fold: 0.04 };
+        else if (details.score >= openThreshold) weights = { aggressive: 0.72, call: 0.12, check: 0.12, fold: 0.16 };
+        else if (position === "BB" && !facingBet) weights = { check: 0.82, aggressive: 0.18 };
+        else weights = { fold: 0.76, call: 0.13, aggressive: 0.11 };
+        reason = `${position} 首入池基线结合牌型可玩性和位置宽度进行随机混合。`;
       } else {
-        opponentAction = `${opponentPos} 过牌`;
+        const pressure = currentBet(gameState) >= 16 ? 18 : currentBet(gameState) >= 6 ? 10 : 0;
+        const continueThreshold = 58 + pressure;
+        if (details.score >= 91) weights = { aggressive: 0.67, call: 0.31, fold: 0.02 };
+        else if (details.score >= continueThreshold) weights = { call: 0.64, aggressive: 0.18, fold: 0.18 };
+        else weights = { fold: 0.79, call: 0.16, aggressive: 0.05 };
+        reason = `面对翻前加注，策略按牌力、位置、价格和再加注压力收紧继续范围。`;
+      }
+    } else {
+      const profile = postflopProfile(seat);
+      const draw = profile.flushDraw || profile.straightDraw;
+      const odds = facingBet ? toCall / Math.max(1, totalPot(gameState) + toCall) : 0;
+      if (facingBet) {
+        if (profile.strength >= 5) weights = { aggressive: 0.58, call: 0.4, fold: 0.02 };
+        else if (profile.strength >= 4) weights = { aggressive: 0.36, call: 0.59, fold: 0.05 };
+        else if (profile.strength >= 3) weights = { call: 0.71, aggressive: 0.11, fold: 0.18 };
+        else if (draw && odds <= 0.36) weights = { call: 0.57, aggressive: 0.24, fold: 0.19 };
+        else if (profile.strength >= 2 && odds <= 0.28) weights = { call: 0.55, fold: 0.4, aggressive: 0.05 };
+        else weights = { fold: 0.8, call: 0.15, aggressive: 0.05 };
+        reason = `面对下注，策略根据成牌强度、听牌权益和约 ${Math.round(odds * 100)}% 的底池赔率混合继续。`;
+      } else {
+        if (profile.strength >= 5) weights = { aggressive: 0.88, check: 0.12 };
+        else if (profile.strength >= 4) weights = { aggressive: 0.76, check: 0.24 };
+        else if (profile.strength >= 3) weights = { aggressive: 0.59, check: 0.41 };
+        else if (draw) weights = { aggressive: 0.54, check: 0.46 };
+        else if (profile.strength >= 2) weights = { check: 0.7, aggressive: 0.3 };
+        else weights = { check: 0.73, aggressive: 0.27 };
+        reason = `无人下注时，策略用牌力和听牌构造价值、半诈唬与过牌保护的混合范围。`;
       }
     }
 
-    const actions = facingBet ? [
-      { key: "fold", label: "弃牌" },
-      { key: "call", label: `跟注 ${formatBb(betSize)}` },
-      { key: "raise", label: `加注到 ${formatBb(betSize * 3)}`, aggressive: true }
-    ] : [
-      { key: "check", label: "过牌" },
-      { key: "bet-small", label: "下注 33% 底池", aggressive: true },
-      { key: "bet-big", label: "下注 75% 底池", aggressive: true }
-    ];
+    const groupWeights = normalizeGroupWeights(weights, candidates);
+    const entries = [];
+    Object.entries(groupWeights).forEach(([group, groupFrequency]) => {
+      const groupCandidates = candidates.filter(item => item.group === group);
+      if (group !== "aggressive" || groupCandidates.length === 1) {
+        groupCandidates.forEach(item => entries.push({ ...item, frequency: groupFrequency / groupCandidates.length }));
+        return;
+      }
+      const allocations = groupCandidates.map(item => item.size === "small" ? 0.56 : item.size === "large" ? 0.36 : 0.08);
+      const allocationTotal = allocations.reduce((sum, value) => sum + value, 0);
+      groupCandidates.forEach((item, index) => entries.push({
+        ...item,
+        frequency: groupFrequency * allocations[index] / allocationTotal
+      }));
+    });
+    entries.sort((a, b) => b.frequency - a.frequency);
+    return { entries, reason, groupWeights };
+  }
 
+  function chooseMixedAction(strategy) {
+    let roll = secureRandom();
+    for (const entry of strategy.entries) {
+      roll -= entry.frequency;
+      if (roll <= 0) return entry;
+    }
+    return strategy.entries[strategy.entries.length - 1];
+  }
+
+  function plainSnapshot(note, actorSeat = null, actionLabel = "") {
+    const gameState = state.engine.state;
     return {
-      type: "postflop",
-      facingBet,
-      betSize,
-      opponentAction,
-      prompt: `${STREET_NAMES[state.street]}轮到你，怎么行动？`,
-      context: `${state.positions[0]} 对 ${opponentPos} · 底池 ${formatBb(state.pot)}${opponentAction ? ` · ${opponentAction}` : " · 你首先行动"}`,
-      actions
+      street: gameState.street,
+      board: [...gameState.board],
+      pot: totalPot(gameState),
+      buttonSeat: gameState.buttonSeat,
+      actionTo: gameState.actionTo,
+      note,
+      actorSeat,
+      actionLabel,
+      players: gameState.players.map(player => player ? {
+        seat: player.seat,
+        name: player.name,
+        stack: player.stack,
+        hand: player.hand ? [...player.hand] : null,
+        status: player.status,
+        bet: gameState.currentBets.get(player.seat) || 0
+      } : null)
     };
   }
 
-  function postflopRecommendation() {
-    const profile = postflopProfile();
-    const facingBet = state.node.facingBet;
-    const draw = profile.flushDraw || profile.straightDraw;
-    let action;
+  function recordStep(note, actorSeat = null, actionLabel = "") {
+    state.timeline.push(plainSnapshot(note, actorSeat, actionLabel));
+  }
 
-    if (facingBet) {
-      if (profile.strength >= 5 || (profile.strength >= 4 && !profile.texture.wet)) action = "raise";
-      else if (profile.strength >= 2 || draw || (state.node.betSize <= state.pot * .3 && profile.overcards === 2)) action = "call";
-      else action = "fold";
-    } else if (profile.strength >= 5) {
-      action = "bet-big";
-    } else if (profile.strength >= 3) {
-      action = profile.texture.wet ? "bet-big" : "bet-small";
-    } else if (profile.strength === 2) {
-      action = "check";
-    } else if (draw) {
-      action = "bet-small";
-    } else if (state.street === "flop" && !profile.texture.wet && chance(48)) {
-      action = "bet-small";
-    } else {
-      action = "check";
+  function actionScore(strategy, chosen) {
+    const groupFrequency = strategy.groupWeights[chosen.group] || 0;
+    const maxFrequency = Math.max(...Object.values(strategy.groupWeights));
+    const ratio = maxFrequency ? groupFrequency / maxFrequency : 0;
+    if (ratio >= 0.65) return { score: 100, rating: "贴合", tone: "good" };
+    if (ratio >= 0.3) return { score: 68, rating: "可混合", tone: "mixed" };
+    return { score: 28, rating: "明显偏离", tone: "leak" };
+  }
+
+  function decisionDistribution(strategy) {
+    return strategy.entries.map(entry => ({
+      label: entry.label,
+      group: entry.group,
+      frequency: Math.round(entry.frequency * 100)
+    }));
+  }
+
+  function actCandidate(seat, candidate, strategy, isHero = false) {
+    const gameStateBefore = state.engine.state;
+    const oldStreet = gameStateBefore.street;
+    if (isHero) {
+      const verdict = actionScore(strategy, candidate);
+      state.decisions.push({
+        street: oldStreet,
+        position: positionForSeat(seat, gameStateBefore),
+        cards: [...gameStateBefore.players[seat].hand],
+        board: [...gameStateBefore.board],
+        pot: totalPot(gameStateBefore),
+        chosen: candidate.label,
+        chosenGroup: candidate.group,
+        recommended: strategy.entries[0].label,
+        distribution: decisionDistribution(strategy),
+        reason: strategy.reason,
+        ...verdict
+      });
+      state.sessionDecisionPoints += 1;
+      state.sessionDecisionScore += verdict.score;
     }
 
-    const textureText = profile.texture.monotone ? "同花面" : profile.texture.paired ? "对子面" : profile.texture.wet ? "动态牌面" : "相对静态牌面";
-    const madeHand = handLabel(profile.hand);
-    const drawText = [profile.flushDraw && "同花听牌", profile.straightDraw && "顺子听牌"].filter(Boolean).join("和");
-    let reason;
-    if (action === "raise") reason = `当前成牌为${madeHand}，在${textureText}面对下注仍有较强价值。加注能向较弱成牌和听牌收费，并为后续街建立清晰的价值线路。`;
-    else if (action === "call") reason = draw
-      ? `你有${drawText}，当前价格允许继续实现权益。跟注保留对手的诈唬，同时避免把中等权益牌过度膨胀。`
-      : `当前成牌为${madeHand}，足以覆盖对手部分价值下注与诈唬。跟注比加注更能保留其弱范围。`;
-    else if (action === "fold") reason = `当前仅为${madeHand}，且缺少足够的强后门或直接听牌。面对该下注继续，长期会为过弱的权益支付过高价格。`;
-    else if (action === "bet-big") reason = `当前成牌为${madeHand}，在${textureText}拥有较强价值。大尺度能向听牌或次强成牌收费，并让价值范围与强诈唬保持极化。`;
-    else if (action === "bet-small") reason = draw
-      ? `你有${drawText}。小尺度半诈唬能制造弃牌率，在被跟注时仍保留改善到强牌的权益。`
-      : `在${textureText}上，小尺度可用较低成本争取弃牌并保持宽范围施压，不必把底池立即做大。`;
-    else reason = `当前成牌为${madeHand}，在${textureText}更适合过牌控制底池。你保留摊牌价值，也避免让较弱牌只在领先时继续。`;
-
-    const plan = state.street === "river"
-      ? "河牌行动后进入摊牌；复盘时比较你的选择与推荐线路，而不是只看单次输赢。"
-      : action === "fold"
-        ? "结束本手。"
-        : draw
-          ? `未完成听牌时根据新牌和下注价格重新评估；改善后继续取价值。`
-          : `下一街重新检查牌面变化、对手尺度与剩余筹码，不自动延续上一街动作。`;
-    return { action, reason, plan, category: profile.category };
+    state.engine.act(candidate.action);
+    const actorName = gameStateBefore.players[seat].name;
+    const line = `${STREET_LABELS[oldStreet]} · ${actorName} ${candidate.label}`;
+    addLog(line);
+    setBubble(`${actorName} ${candidate.label}`);
+    const newStreet = state.engine.state.street;
+    const suffix = newStreet !== oldStreet ? `；进入${STREET_LABELS[newStreet]}` : "";
+    recordStep(`${line}${suffix}`, seat, candidate.label);
+    renderTable();
   }
 
-  function labelForAction(key) {
-    return state.node.actions.find(action => action.key === key)?.label || key;
+  function showEngineError(error) {
+    clearControls();
+    setStatus("牌局暂停", "规则引擎拒绝了该行动", error?.message || "未知错误");
+    console.error(error);
   }
 
-  function renderNode() {
-    state.recommendation = state.street === "preflop" ? preflopRecommendation() : postflopRecommendation();
-    state.chosen = null;
-    el["live-node-label"].textContent = `${STREET_NAMES[state.street]} · 你的决策`;
-    el["live-prompt"].textContent = state.node.prompt;
-    el["live-context"].textContent = state.node.context;
-    el["live-recommendation"].hidden = true;
-    el["live-actions"].replaceChildren();
-    state.node.actions.forEach(action => {
+  function runLoop() {
+    clearTimeout(state.botTimer);
+    if (!state.active || !state.handRunning) return;
+    const gameState = state.engine.state;
+    if (gameState.street === "SHOWDOWN" && gameState.winners) {
+      finishHand();
+      return;
+    }
+    if (gameState.actionTo === null) {
+      finishHand();
+      return;
+    }
+    if (gameState.actionTo === HERO_SEAT) {
+      renderHeroTurn();
+      return;
+    }
+
+    const seat = gameState.actionTo;
+    const player = gameState.players[seat];
+    clearControls();
+    setStatus(`${STREET_LABELS[gameState.street]} · ${positionForSeat(seat)}`, `${player.name} 思考中`, "机器人正在从混合策略中抽取行动…");
+    renderTable();
+    state.botTimer = setTimeout(() => {
+      if (!state.active || !state.handRunning || state.engine.state.actionTo !== seat) return;
+      try {
+        const candidates = legalCandidates(seat);
+        const strategy = strategyFor(seat, candidates);
+        const choice = chooseMixedAction(strategy);
+        actCandidate(seat, choice, strategy, false);
+        runLoop();
+      } catch (error) {
+        showEngineError(error);
+      }
+    }, 520 + Math.round(secureRandom() * 420));
+  }
+
+  function customCandidateFor(amount) {
+    const gameState = state.engine.state;
+    const player = gameState.players[HERO_SEAT];
+    const type = currentBet(gameState) === 0 ? "BET" : "RAISE";
+    const action = { type, playerId: player.id, amount };
+    if (!state.engine.validate(action).valid) return null;
+    const allIn = amount >= (gameState.currentBets.get(HERO_SEAT) || 0) + player.stack;
+    return {
+      action,
+      label: allIn ? `全下到 ${formatBb(amount)}` : `${type === "BET" ? "下注" : "加注到"} ${formatBb(amount)}`,
+      group: "aggressive",
+      size: "custom",
+      key: candidateKey(action)
+    };
+  }
+
+  function setupBetControl(candidates) {
+    const aggressive = candidates.filter(item => item.group === "aggressive");
+    if (!aggressive.length) {
+      el["live-bet-control"].hidden = true;
+      return;
+    }
+    const amounts = aggressive.map(item => item.action.amount);
+    const min = Math.min(...amounts);
+    const max = Math.max(...amounts);
+    if (max <= min) {
+      el["live-bet-control"].hidden = true;
+      return;
+    }
+    const suggested = amounts[Math.min(1, amounts.length - 1)];
+    el["live-bet-slider"].min = String(min / SCALE);
+    el["live-bet-slider"].max = String(max / SCALE);
+    el["live-bet-slider"].step = "0.5";
+    el["live-bet-slider"].value = String(suggested / SCALE);
+    el["live-bet-output"].textContent = formatBb(suggested);
+    state.customAction = customCandidateFor(suggested);
+    el["live-bet-control"].hidden = false;
+  }
+
+  function renderHeroTurn() {
+    const gameState = state.engine.state;
+    const hero = gameState.players[HERO_SEAT];
+    const candidates = legalCandidates(HERO_SEAT);
+    const highBet = currentBet(gameState);
+    const heroBet = gameState.currentBets.get(HERO_SEAT) || 0;
+    const toCall = Math.max(0, highBet - heroBet);
+    const context = `${positionForSeat(HERO_SEAT)} · 底池 ${formatBb(totalPot(gameState))} · ${toCall ? `需跟注 ${formatBb(Math.min(toCall, hero.stack))}` : "无人下注"}`;
+    setStatus(`${STREET_LABELS[gameState.street]} · 轮到你`, "你的行动", context);
+    clearControls();
+    const strategy = strategyFor(HERO_SEAT, candidates);
+
+    candidates.forEach(candidate => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `live-action-button${action.aggressive ? " aggressive" : ""}`;
-      button.dataset.action = action.key;
-      button.textContent = action.label;
-      button.addEventListener("click", () => chooseAction(action.key));
+      button.className = `live-action-button action-${candidate.group}${candidate.group === "aggressive" ? " aggressive" : ""}${candidate.size === "allin" ? " allin" : ""}`;
+      button.textContent = candidate.label;
+      button.addEventListener("click", () => {
+        if (!state.handRunning || state.engine.state.actionTo !== HERO_SEAT) return;
+        clearControls();
+        setStatus(`${STREET_LABELS[gameState.street]} · 已行动`, "等待其他玩家", "机器人正在继续本轮下注。 ");
+        try {
+          actCandidate(HERO_SEAT, candidate, strategy, true);
+          runLoop();
+        } catch (error) {
+          showEngineError(error);
+        }
+      });
       el["live-actions"].append(button);
     });
-    if (state.node.opponentAction) setBubble(state.node.opponentAction);
+    setupBetControl(candidates);
+    renderTable();
   }
 
-  function commitActionToPot(action) {
-    if (state.street === "preflop") {
-      if (action === "call") {
-        const amount = state.node.type === "facing3bet" ? 6.5 : state.positions[0] === "BB" ? 1.5 : 2.5;
-        state.stacks[0] = Math.max(0, state.stacks[0] - amount);
-        state.pot += amount;
-      } else if (action === "raise") {
-        const target = state.node.type === "unopened" ? 2.5 : state.node.type === "facingOpen" ? 9 : 22;
-        const heroPaid = state.node.type === "facing3bet" ? 2.5 : 0;
-        state.stacks[0] = Math.max(0, state.stacks[0] - (target - heroPaid));
-        const blindCall = state.positions[state.opponentSeat] === "BB" ? 1.5 : 2;
-        const opponentCall = state.node.type === "unopened" ? blindCall : state.node.type === "facingOpen" ? 6.5 : 13;
-        const opponentStackCost = state.node.type === "unopened" ? 2.5 : opponentCall;
-        state.stacks[state.opponentSeat] = Math.max(0, state.stacks[state.opponentSeat] - opponentStackCost);
-        state.pot += target - heroPaid + opponentCall;
-        setBubble(`${state.positions[state.opponentSeat]} 跟注`);
-      }
-      return;
-    }
-
-    if (action === "call") {
-      state.stacks[0] = Math.max(0, state.stacks[0] - state.node.betSize);
-      state.pot += state.node.betSize;
-    } else if (action === "raise") {
-      const total = state.node.betSize * 3;
-      state.stacks[0] = Math.max(0, state.stacks[0] - total);
-      state.stacks[state.opponentSeat] = Math.max(0, state.stacks[state.opponentSeat] - state.node.betSize * 2);
-      state.pot += total + state.node.betSize * 2;
-      setBubble(`${state.positions[state.opponentSeat]} 跟注加注`);
-    } else if (action.startsWith("bet")) {
-      const fraction = action === "bet-small" ? .33 : .75;
-      const amount = Math.max(.5, Math.round(state.pot * fraction * 2) / 2);
-      state.stacks[0] = Math.max(0, state.stacks[0] - amount);
-      state.stacks[state.opponentSeat] = Math.max(0, state.stacks[state.opponentSeat] - amount);
-      state.pot += amount * 2;
-      setBubble(`${state.positions[state.opponentSeat]} 跟注 ${formatBb(amount)}`);
-    }
+  function describeWinners(gameState) {
+    if (!gameState.winners?.length) return "牌局结束";
+    const grouped = new Map();
+    gameState.winners.forEach(winner => grouped.set(winner.seat, (grouped.get(winner.seat) || 0) + winner.amount));
+    return [...grouped.entries()].map(([seat, amount]) => `${gameState.players[seat].name} 赢得 ${formatBb(amount)}`).join("；");
   }
 
-  function chooseAction(action) {
-    if (state.chosen || state.handOver) return;
-    state.chosen = action;
-    const isBest = action === state.recommendation.action;
-    const buttons = [...el["live-actions"].querySelectorAll("button")];
-    buttons.forEach(button => {
-      button.disabled = true;
-      if (button.dataset.action === action) button.classList.add("selected");
-      if (button.dataset.action === state.recommendation.action) button.classList.add("best");
+  function createReview(handNet) {
+    const gameState = state.engine.state;
+    const decisionAverage = state.decisions.length
+      ? Math.round(state.decisions.reduce((sum, item) => sum + item.score, 0) / state.decisions.length)
+      : null;
+    return {
+      id: gameState.handId,
+      handNumber: gameState.handNumber,
+      timestamp: Date.now(),
+      heroCards: [...gameState.players[HERO_SEAT].hand],
+      board: [...gameState.board],
+      result: describeWinners(gameState),
+      handNet,
+      decisionAverage,
+      decisions: state.decisions,
+      timeline: state.timeline
+    };
+  }
+
+  function finishHand() {
+    if (!state.handRunning) return;
+    state.handRunning = false;
+    clearTimeout(state.botTimer);
+    clearControls();
+    const gameState = state.engine.state;
+    const hero = gameState.players[HERO_SEAT];
+    const handNet = hero.stack - state.handStartHeroStack;
+    state.sessionHands += 1;
+    state.currentReview = createReview(handNet);
+    state.reviews.unshift(state.currentReview);
+    state.reviews = state.reviews.slice(0, 20);
+    saveReviews();
+    el["live-history-button"].disabled = false;
+
+    renderTable();
+    setStatus("本手结束", describeWinners(gameState), `你的本手盈亏 ${signedBb(handNet)}`);
+    el["live-result-mark"].textContent = handNet >= 0 ? "+" : "−";
+    el["live-result-mark"].style.background = handNet >= 0 ? "#2c7c5c" : "#c95746";
+    el["live-result-title"].textContent = signedBb(handNet);
+    const scoreText = state.currentReview.decisionAverage === null
+      ? "本手没有英雄决策节点。"
+      : `本手 ${state.decisions.length} 个决策节点，策略贴合度 ${state.currentReview.decisionAverage}%。`;
+    el["live-result-copy"].textContent = `${describeWinners(gameState)}。${scoreText}`;
+    el["live-hand-result"].hidden = false;
+    renderSession();
+  }
+
+  function prepareBustedPlayers() {
+    state.engine.state.players.forEach((player, seat) => {
+      if (!player || player.stack > 0) return;
+      state.engine.act({ type: "ADD_CHIPS", playerId: player.id, amount: STARTING_STACK });
+      if (seat === HERO_SEAT) state.heroBuyIns += STARTING_STACK;
     });
-
-    addLine(`${STREET_NAMES[state.street]}：你选择${labelForAction(action)}；推荐${labelForAction(state.recommendation.action)}`);
-    el["live-result-mark"].textContent = isBest ? "✓" : "↗";
-    el["live-result-mark"].style.background = isBest ? "#2c7c5c" : "#c48e26";
-    el["live-best-action"].textContent = labelForAction(state.recommendation.action);
-    el["live-reason"].textContent = state.recommendation.reason;
-    el["live-plan"].textContent = state.recommendation.plan;
-
-    const folded = action === "fold";
-    if (!folded) commitActionToPot(action);
-    state.handOver = folded;
-    el["live-continue-button"].textContent = folded
-      ? "开始下一手"
-      : state.street === "river" ? "查看摊牌" : `继续到${STREET_NAMES[NEXT_STREET[state.street]]}`;
-    el["live-recommendation"].hidden = false;
-    renderSeats(false);
-    el["live-pot"].textContent = `底池 ${formatBb(state.pot)}`;
   }
 
-  function advance() {
-    if (!state.chosen) return;
-    if (state.handOver) {
-      newHand();
-      return;
-    }
-    const next = NEXT_STREET[state.street];
-    if (next === "showdown") {
-      showShowdown();
-      return;
-    }
-    state.street = next;
-    state.node = createPostflopNode();
-    renderTable(false);
-    renderNode();
+  function startHand() {
+    if (!state.engine || state.handRunning) return;
+    prepareBustedPlayers();
+    state.engine.deal();
+    const hero = state.engine.state.players[HERO_SEAT];
+    state.handStartHeroStack = hero.stack + hero.totalInvestedThisHand;
+    state.timeline = [];
+    state.decisions = [];
+    state.liveLog = [];
+    state.handRunning = true;
+    state.currentReview = null;
+    el["live-hand-result"].hidden = true;
+    addLog(`第 ${state.engine.state.handNumber} 手 · ${positionForSeat(HERO_SEAT)} 拿到 ${hero.hand.map(displayCard).join(" ")}`);
+    recordStep(`发牌；你在 ${positionForSeat(HERO_SEAT)} 拿到 ${hero.hand.map(displayCard).join(" ")}`);
+    renderTable();
+    runLoop();
   }
 
-  function showShowdown() {
-    state.street = "showdown";
-    state.handOver = true;
-    const hero = solve([...state.holeCards[0], ...state.board]);
-    const opponent = solve([...state.holeCards[state.opponentSeat], ...state.board]);
-    const winners = window.PokerSolver.Hand.winners([hero, opponent]);
-    const heroWins = winners.includes(hero);
-    const opponentWins = winners.includes(opponent);
-    const result = heroWins && opponentWins ? "平分底池" : heroWins ? "你赢得底池" : `${state.positions[state.opponentSeat]} 赢得底池`;
-    renderTable(true);
-    el["live-node-label"].textContent = "摊牌 · 结果";
-    el["live-prompt"].textContent = result;
-    el["live-context"].textContent = `你：${handLabel(hero)} · 对手：${handLabel(opponent)}`;
-    el["live-actions"].replaceChildren();
-    addLine(`摊牌：${result}（你是${handLabel(hero)}）`);
-    el["live-best-action"].textContent = "本手复盘完成";
-    el["live-reason"].textContent = "单手结果不评价决策质量。复盘时优先检查每条街是否依据位置、赔率、牌力和牌面变化更新判断。";
-    el["live-plan"].textContent = "开始下一手后庄位顺时针轮转，并重新洗入完整 52 张牌。";
-    el["live-continue-button"].textContent = "开始下一手";
-    el["live-recommendation"].hidden = false;
+  function createTable() {
+    if (!window.PokerTools?.createBrowserEngine) throw new Error("六人桌规则引擎未加载");
+    clearTimeout(state.botTimer);
+    state.engine = window.PokerTools.createBrowserEngine({
+      smallBlind: 1,
+      bigBlind: 2,
+      maxPlayers: 6,
+      rakePercent: 0,
+      validateIntegrity: true
+    });
+    TABLE_PLAYERS.forEach((player, seat) => state.engine.sit(seat, player.id, player.name, STARTING_STACK));
+    state.heroBuyIns = STARTING_STACK;
+    state.sessionHands = 0;
+    state.sessionDecisionPoints = 0;
+    state.sessionDecisionScore = 0;
+    state.initialized = true;
+    state.handRunning = false;
+    el["live-history-button"].disabled = !state.reviews.length;
+    startHand();
   }
 
   function newHand() {
-    state.initialized = true;
-    state.handNumber += 1;
-    state.dealerSeat = (state.dealerSeat + 1) % 6;
-    state.street = "preflop";
-    state.deck = shuffledDeck();
-    state.holeCards = Array.from({ length: 6 }, () => [state.deck.pop(), state.deck.pop()]);
-    state.board = Array.from({ length: 5 }, () => state.deck.pop());
-    state.positions = Array.from({ length: 6 }, (_, seat) => positionForSeat(seat));
-    state.stacks = Array(6).fill(100);
-    state.pot = 1.5;
-    state.line = [];
-    state.handOver = false;
-    state.chosen = null;
-    state.node = createPreflopNode();
-    addLine(`${state.positions[0]} 拿到 ${state.holeCards[0].map(displayCard).join(" ")}；${state.node.opponentAction}`);
-    renderTable(false);
-    renderNode();
+    if (!state.engine) {
+      createTable();
+      return;
+    }
+    if (state.handRunning) {
+      if (!window.confirm("当前手牌仍在进行。确定放弃本场并重新开桌吗？")) return;
+      createTable();
+      return;
+    }
+    startHand();
+  }
+
+  function snapshotPosition(snapshot, seat) {
+    return POSITIONS[(seat - snapshot.buttonSeat + 6) % 6];
+  }
+
+  function renderReviewSeats(snapshot) {
+    el["live-review-seats"].replaceChildren();
+    snapshot.players.forEach((player, seat) => {
+      if (!player) return;
+      const node = document.createElement("div");
+      node.className = `live-review-seat${player.status === "FOLDED" ? " folded" : ""}${snapshot.actionTo === seat ? " actor" : ""}`;
+      node.dataset.index = seat;
+      const cards = document.createElement("div");
+      cards.className = "live-review-hole";
+      (player.hand || [null, null]).forEach(card => cards.append(cardNode(card, false, true)));
+      const text = document.createElement("span");
+      text.textContent = `${player.name} · ${snapshotPosition(snapshot, seat)} · ${formatBb(player.stack)}`;
+      node.append(cards, text);
+      if (player.bet) {
+        const bet = document.createElement("small");
+        bet.textContent = `投入 ${formatBb(player.bet)}`;
+        node.append(bet);
+      }
+      el["live-review-seats"].append(node);
+    });
+  }
+
+  function renderReviewStep(index) {
+    if (!state.currentReview) return;
+    const max = state.currentReview.timeline.length - 1;
+    state.reviewStep = Math.max(0, Math.min(max, index));
+    const snapshot = state.currentReview.timeline[state.reviewStep];
+    el["live-review-slider"].value = String(state.reviewStep);
+    el["live-review-prev"].disabled = state.reviewStep === 0;
+    el["live-review-next"].disabled = state.reviewStep === max;
+    el["live-review-board"].replaceChildren();
+    snapshot.board.forEach(card => el["live-review-board"].append(cardNode(card, false, true)));
+    el["live-review-pot"].textContent = `底池 ${formatBb(snapshot.pot)}`;
+    el["live-review-caption"].textContent = `${state.reviewStep + 1} / ${max + 1} · ${snapshot.note}`;
+    renderReviewSeats(snapshot);
+  }
+
+  function distributionNode(distribution) {
+    const list = document.createElement("div");
+    list.className = "review-frequency-list";
+    distribution.forEach(item => {
+      const row = document.createElement("div");
+      const label = document.createElement("span");
+      label.textContent = item.label;
+      const track = document.createElement("i");
+      const fill = document.createElement("b");
+      fill.style.width = `${item.frequency}%`;
+      track.append(fill);
+      const value = document.createElement("strong");
+      value.textContent = `${item.frequency}%`;
+      row.append(label, track, value);
+      list.append(row);
+    });
+    return list;
+  }
+
+  function renderReviewDecisions(review) {
+    el["live-review-decisions"].replaceChildren();
+    if (!review.decisions.length) {
+      const empty = document.createElement("p");
+      empty.className = "review-empty";
+      empty.textContent = "本手没有轮到你行动。";
+      el["live-review-decisions"].append(empty);
+      return;
+    }
+    review.decisions.forEach((decision, index) => {
+      const card = document.createElement("article");
+      card.className = `review-decision ${decision.tone}`;
+      const header = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = `${STREET_LABELS[decision.street]} · ${decision.position}`;
+      const badge = document.createElement("span");
+      badge.textContent = `${decision.rating} ${decision.score}%`;
+      header.append(title, badge);
+      const comparison = document.createElement("p");
+      comparison.textContent = `你选择：${decision.chosen} · 主策略：${decision.recommended}`;
+      const reason = document.createElement("small");
+      reason.textContent = decision.reason;
+      card.append(header, comparison, distributionNode(decision.distribution), reason);
+      card.addEventListener("click", () => {
+        const matching = review.timeline.findIndex(step => step.actorSeat === HERO_SEAT && step.actionLabel === decision.chosen);
+        if (matching >= 0) renderReviewStep(matching);
+      });
+      el["live-review-decisions"].append(card);
+    });
+  }
+
+  function populateReviewSelect(selectedId) {
+    el["live-review-hand-select"].replaceChildren();
+    state.reviews.forEach((review, index) => {
+      const option = document.createElement("option");
+      option.value = review.id;
+      option.textContent = `最近第 ${index + 1} 手 · ${signedBb(review.handNet)}`;
+      option.selected = review.id === selectedId;
+      el["live-review-hand-select"].append(option);
+    });
+  }
+
+  function openReview(review = state.currentReview || state.reviews[0]) {
+    if (!review) return;
+    state.currentReview = review;
+    populateReviewSelect(review.id);
+    const summary = document.createDocumentFragment();
+    const items = [
+      ["结果", signedBb(review.handNet)],
+      ["英雄手牌", review.heroCards.map(displayCard).join(" ")],
+      ["公共牌", review.board.map(displayCard).join(" ") || "未发翻牌"],
+      ["贴合度", review.decisionAverage === null ? "—" : `${review.decisionAverage}%`]
+    ];
+    items.forEach(([label, value]) => {
+      const span = document.createElement("span");
+      const small = document.createElement("small");
+      small.textContent = label;
+      const strong = document.createElement("strong");
+      strong.textContent = value;
+      span.append(small, strong);
+      summary.append(span);
+    });
+    el["live-review-summary"].replaceChildren(summary);
+    el["live-review-slider"].max = String(Math.max(0, review.timeline.length - 1));
+    el["live-review-title"].textContent = `第 ${review.handNumber} 手复盘`;
+    renderReviewDecisions(review);
+    renderReviewStep(review.timeline.length - 1);
+    el["live-review-dialog"].showModal();
   }
 
   function enter() {
-    if (!state.initialized) newHand();
+    state.active = true;
+    if (!state.initialized) createTable();
+    else if (state.handRunning) runLoop();
   }
 
-  el["live-continue-button"].addEventListener("click", advance);
-  window.LivePractice = { enter, newHand, _state: state, _test: { shuffledDeck, solve } };
+  function leave() {
+    state.active = false;
+    clearTimeout(state.botTimer);
+  }
+
+  el["live-bet-slider"].addEventListener("input", () => {
+    const chips = Math.round(Number(el["live-bet-slider"].value) * SCALE);
+    el["live-bet-output"].textContent = formatBb(chips);
+    state.customAction = customCandidateFor(chips);
+    el["live-bet-confirm"].disabled = !state.customAction;
+  });
+
+  el["live-bet-confirm"].addEventListener("click", () => {
+    if (!state.customAction || state.engine.state.actionTo !== HERO_SEAT) return;
+    const candidates = legalCandidates(HERO_SEAT);
+    const strategy = strategyFor(HERO_SEAT, candidates);
+    const candidate = state.customAction;
+    clearControls();
+    try {
+      actCandidate(HERO_SEAT, candidate, strategy, true);
+      runLoop();
+    } catch (error) {
+      showEngineError(error);
+    }
+  });
+
+  el["live-next-hand-button"].addEventListener("click", startHand);
+  el["live-review-button"].addEventListener("click", () => openReview());
+  el["live-history-button"].addEventListener("click", () => openReview(state.reviews[0]));
+  el["live-review-close"].addEventListener("click", () => el["live-review-dialog"].close());
+  el["live-review-prev"].addEventListener("click", () => renderReviewStep(state.reviewStep - 1));
+  el["live-review-next"].addEventListener("click", () => renderReviewStep(state.reviewStep + 1));
+  el["live-review-slider"].addEventListener("input", () => renderReviewStep(Number(el["live-review-slider"].value)));
+  el["live-review-hand-select"].addEventListener("change", () => {
+    const review = state.reviews.find(item => item.id === el["live-review-hand-select"].value);
+    if (review) openReview(review);
+  });
+  el["live-review-dialog"].addEventListener("click", event => {
+    if (event.target === el["live-review-dialog"]) el["live-review-dialog"].close();
+  });
+
+  window.LivePractice = { enter, leave, newHand, _state: state, _test: { legalCandidates, strategyFor, totalPot } };
 })();
