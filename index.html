@@ -113,7 +113,7 @@
 
     .mode-switch {
       display: grid;
-      grid-template-columns: repeat(3, minmax(72px, 1fr));
+      grid-template-columns: repeat(4, minmax(72px, 1fr));
       gap: 3px;
       padding: 4px;
       background: #edf1ef;
@@ -944,7 +944,7 @@
       .brand-subtitle { display: none; }
       .brand-name { font-size: 18px; }
       .brand-mark { width: 34px; height: 34px; }
-      .mode-switch { grid-template-columns: repeat(3, 1fr); }
+      .mode-switch { grid-template-columns: repeat(4, 1fr); }
       .mode-switch button { padding-inline: 6px; }
       .spot-title { font-size: 23px; }
       .table-stage { min-height: 330px; }
@@ -983,6 +983,7 @@
       .toast { transition: none; }
     }
   </style>
+  <link rel="stylesheet" href="live-practice.css">
 </head>
 <body>
   <header class="topbar">
@@ -998,6 +999,7 @@
       <button type="button" data-mode="mixed" aria-pressed="true">混合</button>
       <button type="button" data-mode="preflop" aria-pressed="false">翻前</button>
       <button type="button" data-mode="postflop" aria-pressed="false">翻后</button>
+      <button type="button" data-mode="live" aria-pressed="false">实战桌</button>
     </nav>
 
     <div class="scoreboard">
@@ -1009,7 +1011,7 @@
     </div>
   </header>
 
-  <main class="workspace">
+  <main class="workspace" id="quiz-workspace">
     <aside class="rail rail-left" aria-labelledby="spot-title">
       <p class="eyebrow" id="spot-kind">翻前 · 单加注底池</p>
       <h2 class="spot-title" id="spot-title">BTN 对 BB</h2>
@@ -1070,6 +1072,64 @@
           <button class="next-button" type="button" id="next-button">下一手 →</button>
         </div>
       </section>
+    </aside>
+  </main>
+
+  <main class="live-workspace" id="live-workspace" hidden>
+    <section class="live-table-panel" aria-label="六人实战模拟牌桌">
+      <header class="live-table-header">
+        <div>
+          <p class="eyebrow">6-MAX · 100BB · 无前注</p>
+          <h2>实战模拟桌</h2>
+        </div>
+        <div class="live-hand-meta">
+          <span id="live-hand-number">第 1 手</span>
+          <span id="live-street">翻前</span>
+        </div>
+      </header>
+
+      <div class="live-table-shell" id="live-table-shell">
+        <div class="live-table-felt">
+          <div class="live-center">
+            <div class="live-board" id="live-board" aria-label="公共牌"></div>
+            <div class="live-pot-stack" aria-hidden="true"><i></i><i></i><i></i></div>
+            <strong id="live-pot">底池 1.5BB</strong>
+          </div>
+        </div>
+        <div class="live-seats" id="live-seats"></div>
+        <div class="live-action-bubble" id="live-action-bubble" hidden></div>
+      </div>
+
+      <footer class="live-table-footer">
+        <span><i class="status-dot active"></i> 教学对局</span>
+        <span>随机牌局 · 本机运行</span>
+      </footer>
+    </section>
+
+    <aside class="live-control-panel">
+      <section class="live-decision-block">
+        <p class="eyebrow" id="live-node-label">等待发牌</p>
+        <h2 id="live-prompt">你会怎么做？</h2>
+        <p class="live-context" id="live-context"></p>
+        <div class="live-actions" id="live-actions"></div>
+      </section>
+
+      <section class="live-recommendation" id="live-recommendation" aria-live="polite" hidden>
+        <div class="recommendation-heading">
+          <span id="live-result-mark"></span>
+          <div><small>教学推荐线路</small><strong id="live-best-action"></strong></div>
+        </div>
+        <p id="live-reason"></p>
+        <div class="live-plan" id="live-plan"></div>
+        <button class="live-continue-button" type="button" id="live-continue-button">继续到翻牌</button>
+      </section>
+
+      <section class="live-line-card">
+        <div class="live-line-title"><h3>本手线路</h3><span id="live-hero-position">BTN</span></div>
+        <ol id="live-line-log"><li class="pending">发牌后开始记录</li></ol>
+      </section>
+
+      <p class="live-boundary">推荐是基于位置、价格、牌力、听牌和牌面结构的教学策略基线，不是指定范围与下注树下的精确 Solver 输出。</p>
     </aside>
   </main>
 
@@ -1626,10 +1686,24 @@
       elements["mode-switch"].querySelectorAll("button").forEach(item => {
         item.setAttribute("aria-pressed", String(item === button));
       });
+      const isLive = state.mode === "live";
+      document.getElementById("quiz-workspace").hidden = isLive;
+      document.getElementById("live-workspace").hidden = !isLive;
+      document.body.classList.toggle("live-mode", isLive);
+      elements["reset-button"].title = isLive ? "重新发牌" : "重置成绩";
+      elements["reset-button"].setAttribute("aria-label", isLive ? "重新发牌" : "重置成绩");
+      if (isLive) {
+        window.LivePractice?.enter();
+        return;
+      }
       nextScenario();
     });
 
     elements["reset-button"].addEventListener("click", () => {
+      if (state.mode === "live") {
+        window.LivePractice?.newHand();
+        return;
+      }
       state.sessionAnswered = 0;
       state.sessionScore = 0;
       state.history = { answered: 0, score: 0 };
@@ -1639,6 +1713,7 @@
     });
 
     document.addEventListener("keydown", event => {
+      if (state.mode === "live") return;
       if (event.key === "Enter" && state.answered) {
         nextScenario();
         return;
@@ -1650,5 +1725,7 @@
 
     nextScenario();
   </script>
+  <script src="vendor/pokersolver.min.js"></script>
+  <script src="live-practice.js"></script>
 </body>
 </html>
