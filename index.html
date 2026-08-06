@@ -985,6 +985,7 @@
   </style>
   <link rel="stylesheet" href="live-practice.css?v=20260805-4">
   <link rel="stylesheet" href="knowledge-base.css?v=20260805-1">
+  <link rel="stylesheet" href="player-profile.css?v=20260806-1">
 </head>
 <body>
   <header class="topbar">
@@ -1008,6 +1009,7 @@
       <div class="score-item"><span class="score-label">准确率</span><strong class="score-value" id="accuracy">—</strong></div>
       <button class="wrong-book-button" type="button" id="wrong-book-button" title="打开错题本" aria-label="打开错题本">错题本 <span class="wrong-count" id="wrong-count">0</span></button>
       <button class="knowledge-button" type="button" id="knowledge-button" title="打开德州扑克知识库" aria-label="打开德州扑克知识库">知识库</button>
+      <button class="player-profile-button" type="button" id="player-profile-button" title="打开玩家画像" aria-label="打开玩家画像">玩家画像</button>
       <button class="icon-button" type="button" id="share-button" title="分享训练器" aria-label="分享训练器">↗</button>
       <button class="icon-button" type="button" id="reset-button" title="重置成绩" aria-label="重置成绩">↻</button>
     </div>
@@ -1216,6 +1218,42 @@
         <div class="knowledge-reader-meta" id="knowledge-meta"></div>
         <article class="knowledge-document-content" id="knowledge-document-content"></article>
       </section>
+    </div>
+  </dialog>
+
+  <dialog class="player-profile-dialog" id="player-profile-dialog" aria-labelledby="player-profile-title">
+    <header class="player-profile-header">
+      <div>
+        <p class="eyebrow">PLAYER PROFILE · 观察台</p>
+        <h2 id="player-profile-title">玩家画像</h2>
+        <p>先记下可观察行为，再暂定画像。记录只保存在当前浏览器，不会上传玩家姓名。</p>
+      </div>
+      <button class="dialog-close" type="button" id="player-profile-close" aria-label="关闭玩家画像">×</button>
+    </header>
+    <div class="player-profile-body">
+      <section aria-labelledby="player-profile-board-title">
+        <p class="player-profile-section-label" id="player-profile-board-title">四分化画像</p>
+        <div class="player-profile-board" id="player-profile-board"></div>
+      </section>
+      <div class="player-profile-workbench">
+        <form class="player-profile-form" id="player-profile-form">
+          <p class="player-profile-section-label">记下一位玩家</p>
+          <label for="player-profile-name">玩家名字或昵称</label>
+          <input id="player-profile-name" name="name" type="text" maxlength="40" autocomplete="off" placeholder="例如：NL50 桌的 Alex" required>
+          <label for="player-profile-note">观察备注（可选）</label>
+          <textarea id="player-profile-note" name="note" maxlength="180" placeholder="例如：河牌大额下注几乎没见过诈唬"></textarea>
+          <div class="player-profile-form-actions">
+            <button class="player-profile-save" type="submit" id="player-profile-save">记下玩家</button>
+            <button class="player-profile-cancel" type="button" id="player-profile-cancel" hidden>取消编辑</button>
+          </div>
+          <p class="player-profile-status" id="player-profile-status" role="status" aria-live="polite"></p>
+        </form>
+        <section class="player-profile-roster" aria-labelledby="player-profile-roster-title">
+          <p class="player-profile-section-label" id="player-profile-roster-title">已记录玩家</p>
+          <div class="player-profile-roster-list" id="player-profile-roster-list"></div>
+        </section>
+      </div>
+      <p class="player-profile-footnote">画像是剥削层的暂定假设，不替代基础 GTO 判断。连续观察到多条行为证据后再调整置信度。</p>
     </div>
   </dialog>
 
@@ -1801,5 +1839,6 @@
   <script src="vendor/pokersolver.min.js?v=20260805-2"></script>
   <script src="vendor/pokertools-engine.min.js?v=20260805-3"></script>
   <script src="live-practice.js?v=20260805-5"></script>
+  <script src="player-profile.js?v=20260806-1"></script>
 </body>
 </html>
