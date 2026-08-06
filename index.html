@@ -986,6 +986,7 @@
   <link rel="stylesheet" href="live-practice.css?v=20260805-4">
   <link rel="stylesheet" href="knowledge-base.css?v=20260805-1">
   <link rel="stylesheet" href="player-profile.css?v=20260806-1">
+  <link rel="stylesheet" href="data-sync.css?v=20260806-1">
 </head>
 <body>
   <header class="topbar">
@@ -1010,6 +1011,7 @@
       <button class="wrong-book-button" type="button" id="wrong-book-button" title="打开错题本" aria-label="打开错题本">错题本 <span class="wrong-count" id="wrong-count">0</span></button>
       <button class="knowledge-button" type="button" id="knowledge-button" title="打开德州扑克知识库" aria-label="打开德州扑克知识库">知识库</button>
       <button class="player-profile-button" type="button" id="player-profile-button" title="打开玩家画像" aria-label="打开玩家画像">玩家画像</button>
+      <button class="data-sync-button" type="button" id="data-sync-button" title="导出或导入本地数据" aria-label="导出或导入本地数据">同步</button>
       <button class="icon-button" type="button" id="share-button" title="分享训练器" aria-label="分享训练器">↗</button>
       <button class="icon-button" type="button" id="reset-button" title="重置成绩" aria-label="重置成绩">↻</button>
     </div>
@@ -1254,6 +1256,33 @@
         </section>
       </div>
       <p class="player-profile-footnote">画像是剥削层的暂定假设，不替代基础 GTO 判断。连续观察到多条行为证据后再调整置信度。</p>
+    </div>
+  </dialog>
+
+  <dialog class="data-sync-dialog" id="data-sync-dialog" aria-labelledby="data-sync-title">
+    <header class="data-sync-header">
+      <div>
+        <p class="eyebrow">LOCAL SYNC · 本地数据</p>
+        <h2 id="data-sync-title">数据同步</h2>
+        <p>用一个本地 JSON 文件，把这台设备的数据带到另一台设备。</p>
+      </div>
+      <button class="dialog-close" type="button" id="data-sync-close" aria-label="关闭数据同步">×</button>
+    </header>
+    <div class="data-sync-body">
+      <div class="data-sync-summary" id="data-sync-summary" aria-label="当前数据统计"></div>
+      <div class="data-sync-actions">
+        <button class="data-sync-action" type="button" id="data-sync-export">
+          <strong>导出当前数据</strong>
+          <span>下载一个同步文件。适合从电脑带到手机，或先做本地备份。</span>
+        </button>
+        <button class="data-sync-action" type="button" id="data-sync-import">
+          <strong>导入并合并数据</strong>
+          <span>选择另一台设备导出的 JSON。已有数据不会被覆盖，重复导入也不会重复计数。</span>
+        </button>
+      </div>
+      <input class="data-sync-file" id="data-sync-file" type="file" accept=".json,application/json" aria-label="选择同步 JSON 文件">
+      <p class="data-sync-status" id="data-sync-status" role="status" aria-live="polite"></p>
+      <p class="data-sync-notice">同步文件可能包含玩家姓名、备注、错题和牌谱。请只在自己的设备之间传输，不要上传到 GitHub 或发送给他人。</p>
     </div>
   </dialog>
 
@@ -1840,5 +1869,6 @@
   <script src="vendor/pokertools-engine.min.js?v=20260805-3"></script>
   <script src="live-practice.js?v=20260805-5"></script>
   <script src="player-profile.js?v=20260806-1"></script>
+  <script src="data-sync.js?v=20260806-1"></script>
 </body>
 </html>
