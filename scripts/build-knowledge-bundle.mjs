@@ -39,7 +39,7 @@ for (const file of files) {
 
 const rules = {
   sequence: ["还原节点", "比较范围", "计算价格", "构造价值/诈唬", "检查阻挡牌"],
-  sourceDocuments: ["concepts-核心概念", "topics-翻后决策框架", "summaries-一手牌讲解", "summaries-德扑十年理论"],
+  sourceDocuments: ["concepts-核心概念", "topics-翻后决策框架", "topics-玩家画像与剥削", "summaries-一手牌讲解", "summaries-德扑十年理论", "summaries-玩家画像"],
   strategy: {
     multiwayAggressionFactor: 0.72,
     pairedBoardAggressionFactor: 0.86,
@@ -51,9 +51,9 @@ const rules = {
 };
 
 const payload = JSON.stringify({
-  version: "knowledge-2026-08-05",
+  version: "knowledge-2026-08-06",
   title: "德州扑克结构化知识库",
-  scope: "8 个整理知识文件；不包含原始课程转写稿",
+  scope: "10 个整理知识文件；不包含原始课程转写稿",
   documents,
   rules
 });
