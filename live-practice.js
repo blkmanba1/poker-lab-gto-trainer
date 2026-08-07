@@ -698,6 +698,82 @@
     return notes.join(" · ");
   }
 
+  function coachPick(items, seed) {
+    const value = String(seed || "").split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    return items[value % items.length];
+  }
+
+  function coachReview(decisionContext) {
+    const {
+      street, position, candidate, strategy, gameState, pot, toCall, price, chosenFrequency, topFrequency
+    } = decisionContext;
+    const signals = strategy.knowledgeSignals || {};
+    const facingBet = toCall > 0;
+    const profile = street === "PREFLOP" ? null : postflopProfile(HERO_SEAT);
+    const boardWords = [];
+    if (signals.multiway) boardWords.push("多人池的范围密度");
+    if (signals.pairedBoard) boardWords.push("成对牌面的坚果分布");
+    if (signals.monotonePressure) boardWords.push("同花组合与阻挡牌");
+    if (signals.lowConnected) boardWords.push("低张连接面对防守方的改善");
+    if (signals.highCardDry) boardWords.push("高牌干燥面上的小尺度覆盖");
+    if (signals.spr !== null && signals.spr >= 6 && !signals.inPosition) boardWords.push("高 SPR 无位置的控池需求");
+    if (signals.spr !== null && signals.spr <= 2.5) boardWords.push("低 SPR 下强牌的兑现能力");
+    const primary = boardWords[0] || (street === "PREFLOP"
+      ? `位置 ${position} 与前序压力下的继续范围`
+      : "范围权益、下注尺度和后续街的连接");
+    const chosen = candidate.label;
+    const recommended = strategy.entries[0]?.label || "主频行动";
+    const frequency = chosenFrequency;
+    const seed = `${street}-${position}-${chosen}-${signals.pairedBoard}-${signals.potOdds}`;
+    let lead;
+    if (decisionContext.tone === "good") {
+      lead = coachPick([
+        `这一步你先抓住了${primary}，所以 ${chosen} 是自然的主线。`,
+        `你没有被绝对牌力带着走，而是把${primary}放在了第一顺位；这正是这节点的关键。`,
+        `${chosen} 在这里不是“背答案”，而是对${primary}做出的范围层回应。`
+      ], seed);
+    } else if (decisionContext.tone === "mixed") {
+      lead = coachPick([
+        `${chosen} 不是错误，但它是围绕${primary}的低频分支；默认仍让 ${recommended} 承担更多频率。`,
+        `这手牌可以保留 ${chosen}，前提是你能说清楚它如何服务于${primary}，否则回到 ${recommended}。`,
+        `你的方向没有偏离，但频率要收回来：${chosen} 约占 ${frequency}%，不能把混合分支当成常规动作。`
+      ], seed);
+    } else {
+      lead = coachPick([
+        `这一步真正需要纠正的是决策顺序：先处理${primary}，再谈 ${chosen}。`,
+        `你把${primary}放到了牌力直觉之后，结果让 ${chosen} 变成了一个缺少范围支撑的动作。`,
+        `${chosen} 只占当前策略的 ${frequency}%；这不是记忆题，而是${primary}没有被先还原。`
+      ], seed);
+    }
+
+    const reasonParts = [];
+    if (street === "PREFLOP") {
+      reasonParts.push(`翻前先看 ${position}、前序加注尺寸和后方未行动玩家，再决定范围是线性继续还是极化再加注。`);
+    } else {
+      reasonParts.push(`翻后不能沿用翻前主动权：当前要重新比较范围权益、坚果上限和这张公共牌改变了什么。`);
+    }
+    if (facingBet) {
+      reasonParts.push(`你需要补 ${formatBb(toCall)}，简化盈亏平衡权益约 ${Math.round(price * 100)}%；价格只是防守起点，还要问这手牌能否实现权益。`);
+    } else {
+      reasonParts.push("当前没有下注，主动下注必须同时回答“哪些更差牌会继续”和“哪些更好牌会弃牌”两个问题。");
+    }
+    if (signals.spr !== null) reasonParts.push(`有效后手对应 SPR ${signals.spr.toFixed(1)}，${signals.inPosition ? "有位置可以延后压力" : "无位置要保留过牌保护"}。`);
+    reasonParts.push(`当前主频行动是 ${recommended}（约 ${topFrequency}%）；你的选择占 ${frequency}%，所以复盘重点是频率位置而不是简单贴“对/错”标签。`);
+
+    const check = street === "PREFLOP"
+      ? "①先写出对手的继续方式；②再按位置和牌型挑组合；③最后检查加注尺寸是否改变了后续 SPR。"
+      : facingBet
+        ? "①先算价格；②移除没有足够权益实现的继续牌；③最后用阻挡牌和价值/诈唬构造决定跟注或加注。"
+        : "①先比较范围与坚果；②再选小注、重注或过牌骨架；③最后问价值牌能否被更差牌支付。";
+    const question = coachPick([
+      "如果把自己的两张牌盖住，只看位置、价格和行动线，你还会选这个动作吗？",
+      "这个动作是在让更差牌付费，还是只把更好牌留在对手范围里？",
+      "哪一张转牌会让你改变计划？如果答不出来，说明下注前的跨街预演还不够。",
+      "你是在保护自己的范围，还是只是因为这手牌看起来很强？"
+    ], `${seed}-question`);
+    return { lead, reason: reasonParts.join(" "), check, question };
+  }
+
   function buildDecisionAnalysis(seat, strategy, candidate, gameState) {
     const player = gameState.players[seat];
     const pot = totalPot(gameState);
@@ -709,6 +785,20 @@
     const chosenFrequency = Math.round((strategy.entries.find(entry => entry.label === candidate.label)?.frequency || 0) * 100);
     const topFrequency = Math.round((strategy.entries[0]?.frequency || 0) * 100);
     const hand = gameState.street === "PREFLOP" ? preflopHandLabel(player.hand) : postflopHandLabel(seat);
+    const tone = actionScore(strategy, candidate).tone;
+    const coach = coachReview({
+      street: gameState.street,
+      position: positionForSeat(seat, gameState),
+      candidate,
+      strategy,
+      gameState,
+      pot,
+      toCall,
+      price,
+      chosenFrequency,
+      topFrequency,
+      tone
+    });
     const priceText = toCall > 0
       ? `需补 ${formatBb(toCall)}，跟注后总底池约 ${formatBb(pot + toCall)}，盈亏平衡权益约 ${Math.round(price * 100)}%。`
       : `当前无需补筹码，可以免费过牌；若主动下注，需要说明更差牌为何跟注或更好牌为何弃牌。`;
@@ -723,7 +813,8 @@
       frequency: `你的行动在当前近似策略中占 ${chosenFrequency}%，最高频行动占 ${topFrequency}%。频率用于比较策略结构，不是精确 Solver 输出。`,
       knowledge: strategy.knowledgeSummary,
       sources: strategy.knowledgeSources,
-      matches: strategy.knowledgeMatches
+      matches: strategy.knowledgeMatches,
+      coach
     };
   }
 
@@ -1078,6 +1169,7 @@
   }
 
   function decisionFeedback(decision) {
+    if (decision.analysis?.coach?.lead) return decision.analysis.coach.lead;
     const chosenFrequency = decision.distribution.find(item => item.label === decision.chosen)?.frequency || 0;
     const recommendedFrequency = decision.distribution.find(item => item.label === decision.recommended)?.frequency || 0;
     if (decision.tone === "good") {
@@ -1116,6 +1208,9 @@
       const details = document.createElement("div");
       details.className = "review-detail-list";
       const analysis = decision.analysis || {};
+      if (analysis.coach?.reason) details.append(reviewDetailNode("教练解释", analysis.coach.reason));
+      if (analysis.coach?.check) details.append(reviewDetailNode("下次检查", analysis.coach.check));
+      if (analysis.coach?.question) details.append(reviewDetailNode("教练会追问", analysis.coach.question));
       if (analysis.node) details.append(reviewDetailNode("节点", analysis.node));
       if (analysis.hand) details.append(reviewDetailNode("手牌与牌面", analysis.hand));
       if (analysis.price) details.append(reviewDetailNode("价格", analysis.price));
