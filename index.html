@@ -113,7 +113,7 @@
 
     .mode-switch {
       display: grid;
-      grid-template-columns: repeat(4, minmax(72px, 1fr));
+      grid-template-columns: repeat(5, minmax(68px, 1fr));
       gap: 3px;
       padding: 4px;
       background: #edf1ef;
@@ -944,7 +944,7 @@
       .brand-subtitle { display: none; }
       .brand-name { font-size: 18px; }
       .brand-mark { width: 34px; height: 34px; }
-      .mode-switch { grid-template-columns: repeat(4, 1fr); }
+      .mode-switch { grid-template-columns: repeat(5, 1fr); }
       .mode-switch button { padding-inline: 6px; }
       .spot-title { font-size: 23px; }
       .table-stage { min-height: 330px; }
@@ -984,6 +984,7 @@
     }
   </style>
   <link rel="stylesheet" href="live-practice.css?v=20260805-4">
+  <link rel="stylesheet" href="scenario-advisor.css?v=20260807-1">
   <link rel="stylesheet" href="knowledge-base.css?v=20260805-1">
   <link rel="stylesheet" href="player-profile.css?v=20260806-1">
   <link rel="stylesheet" href="data-sync.css?v=20260806-1">
@@ -1003,6 +1004,7 @@
       <button type="button" data-mode="preflop" aria-pressed="false">翻前</button>
       <button type="button" data-mode="postflop" aria-pressed="false">翻后</button>
       <button type="button" data-mode="live" aria-pressed="false">对战桌</button>
+      <button type="button" data-mode="advisor" aria-pressed="false">推演台</button>
     </nav>
 
     <div class="scoreboard">
@@ -1079,6 +1081,135 @@
         </div>
       </section>
     </aside>
+  </main>
+
+  <main class="advisor-workspace" id="advisor-workspace" hidden>
+    <section class="advisor-input-panel" aria-labelledby="advisor-title">
+      <header class="advisor-heading-row">
+        <div>
+          <p class="eyebrow">KNOWLEDGE-DRIVEN LINE BUILDER</p>
+          <h2 id="advisor-title">牌局推演台</h2>
+        </div>
+        <span class="advisor-stage-badge" id="advisor-stage-badge">待输入</span>
+      </header>
+
+      <div class="advisor-question-block">
+        <label class="advisor-label" for="advisor-question">牌局描述</label>
+        <textarea id="advisor-question" placeholder="我在 BTN，手牌 A♠ K♠；对手 BB。翻牌 Q♠ 7♦ 2♣，底池 6BB，有效筹码 97BB，对手过牌到我。"></textarea>
+        <button class="advisor-parse-button" type="button" id="advisor-parse">解析并推演</button>
+      </div>
+
+      <div class="advisor-fields">
+        <div class="advisor-field">
+          <label for="advisor-hero-position">你的位置</label>
+          <select id="advisor-hero-position">
+            <option>UTG</option><option>HJ</option><option>CO</option><option selected>BTN</option><option>SB</option><option>BB</option>
+          </select>
+        </div>
+        <div class="advisor-field">
+          <label for="advisor-villain-position">主要对手</label>
+          <select id="advisor-villain-position">
+            <option>UTG</option><option>HJ</option><option>CO</option><option>BTN</option><option>SB</option><option selected>BB</option>
+          </select>
+        </div>
+        <div class="advisor-field wide">
+          <label for="advisor-hero-cards">你的手牌</label>
+          <input id="advisor-hero-cards" inputmode="text" autocomplete="off" placeholder="A♠ K♠">
+          <small>支持 As Ks、A♠ K♠ 等常见写法</small>
+        </div>
+        <div class="advisor-field wide">
+          <label for="advisor-flop">翻牌</label>
+          <input id="advisor-flop" inputmode="text" autocomplete="off" placeholder="Q♠ 7♦ 2♣">
+        </div>
+        <div class="advisor-field">
+          <label for="advisor-turn">转牌</label>
+          <input id="advisor-turn" inputmode="text" autocomplete="off" placeholder="T♥">
+        </div>
+        <div class="advisor-field">
+          <label for="advisor-river">河牌</label>
+          <input id="advisor-river" inputmode="text" autocomplete="off" placeholder="2♥">
+        </div>
+        <div class="advisor-field">
+          <label for="advisor-pot">当前底池 BB</label>
+          <input id="advisor-pot" type="number" min="0.5" step="0.5" value="6">
+        </div>
+        <div class="advisor-field">
+          <label for="advisor-stack">有效后手 BB</label>
+          <input id="advisor-stack" type="number" min="0.5" step="0.5" value="97">
+        </div>
+        <div class="advisor-field">
+          <label for="advisor-players">仍在牌局</label>
+          <select id="advisor-players"><option value="2">2 人</option><option value="3">3 人</option><option value="4">4 人</option><option value="5">5 人</option><option value="6">6 人</option></select>
+        </div>
+        <div class="advisor-field">
+          <label for="advisor-initiative">翻前主动方</label>
+          <select id="advisor-initiative"><option value="hero">我</option><option value="villain">对手</option><option value="none">不明确</option></select>
+        </div>
+        <div class="advisor-field wide">
+          <label for="advisor-action">轮到你时</label>
+          <select id="advisor-action">
+            <optgroup label="翻前">
+              <option value="unopened">前面无人入池</option>
+              <option value="face-open">面对 2.5BB 开池</option>
+              <option value="face-3bet">面对 9BB 3Bet</option>
+              <option value="face-4bet">面对 22BB 4Bet</option>
+            </optgroup>
+            <optgroup label="翻后">
+              <option value="checked" selected>当前无人下注</option>
+              <option value="face-small">面对 33% 底池下注</option>
+              <option value="face-large">面对 75% 底池下注</option>
+              <option value="face-overbet">面对 125% 底池下注</option>
+              <option value="face-allin">面对全下</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="advisor-field wide">
+          <label for="advisor-line">前序行动</label>
+          <input id="advisor-line" autocomplete="off" placeholder="BTN 开池 2.5BB，BB 跟注；翻牌 BB 过牌">
+        </div>
+      </div>
+
+      <p class="advisor-error" id="advisor-error" role="alert" hidden></p>
+      <button class="advisor-run-button" type="button" id="advisor-run">生成推荐线路</button>
+      <p class="advisor-boundary">结果由站内知识库与教学策略权重生成，适合检查决策结构，不是指定范围、抽水和下注树下的 Solver 精确解。</p>
+    </section>
+
+    <section class="advisor-output-panel" aria-live="polite">
+      <div class="advisor-empty" id="advisor-empty">
+        <div><strong>等待牌局节点</strong><p>填写两张手牌与当前街信息后，这里会生成主线、混合频率和下一街计划。</p></div>
+      </div>
+
+      <article class="advisor-result" id="advisor-result" hidden>
+        <header class="advisor-result-head">
+          <div>
+            <p class="eyebrow" id="advisor-result-stage">翻牌 · BTN 对 BB</p>
+            <h2 id="advisor-result-title">A♠ K♠</h2>
+            <p class="advisor-node-meta" id="advisor-result-meta"></p>
+          </div>
+          <div class="advisor-cards" id="advisor-cards" aria-label="牌局卡牌"></div>
+        </header>
+
+        <section class="advisor-takeaway">
+          <small>推荐主线</small>
+          <h3 id="advisor-takeaway-title"></h3>
+          <p id="advisor-takeaway-copy"></p>
+        </section>
+
+        <section class="advisor-mix">
+          <div class="advisor-section-head"><h3>行动权重</h3><span>近似教学频率</span></div>
+          <div id="advisor-mix"></div>
+        </section>
+
+        <div class="advisor-street-path" id="advisor-street-path" aria-label="跨街计划"></div>
+
+        <section class="advisor-reason-grid" id="advisor-reasons"></section>
+
+        <section class="advisor-sources">
+          <div class="advisor-section-head"><h3>知识依据</h3><span>点击查看完整条目</span></div>
+          <div class="advisor-source-list" id="advisor-sources"></div>
+        </section>
+      </article>
+    </section>
   </main>
 
   <main class="live-workspace" id="live-workspace" hidden>
@@ -1824,22 +1955,34 @@
         item.setAttribute("aria-pressed", String(item === button));
       });
       const isLive = state.mode === "live";
-      document.getElementById("quiz-workspace").hidden = isLive;
+      const isAdvisor = state.mode === "advisor";
+      document.getElementById("quiz-workspace").hidden = isLive || isAdvisor;
       document.getElementById("live-workspace").hidden = !isLive;
+      document.getElementById("advisor-workspace").hidden = !isAdvisor;
       document.body.classList.toggle("live-mode", isLive);
-      elements["reset-button"].title = isLive ? "重新开桌" : "重置成绩";
-      elements["reset-button"].setAttribute("aria-label", isLive ? "重新开桌" : "重置成绩");
+      document.body.classList.toggle("advisor-mode", isAdvisor);
+      const resetLabel = isLive ? "重新开桌" : isAdvisor ? "清空推演" : "重置成绩";
+      elements["reset-button"].title = resetLabel;
+      elements["reset-button"].setAttribute("aria-label", resetLabel);
       if (isLive) {
         window.LivePractice?.enter();
         return;
       }
       window.LivePractice?.leave?.();
+      if (isAdvisor) {
+        window.ScenarioAdvisor?.enter();
+        return;
+      }
       nextScenario();
     });
 
     elements["reset-button"].addEventListener("click", () => {
       if (state.mode === "live") {
         window.LivePractice?.newHand();
+        return;
+      }
+      if (state.mode === "advisor") {
+        window.ScenarioAdvisor?.reset();
         return;
       }
       state.sessionAnswered = 0;
@@ -1851,7 +1994,7 @@
     });
 
     document.addEventListener("keydown", event => {
-      if (state.mode === "live") return;
+      if (state.mode === "live" || state.mode === "advisor") return;
       if (event.key === "Enter" && state.answered) {
         nextScenario();
         return;
@@ -1867,6 +2010,7 @@
   <script src="knowledge-ui.js?v=20260805-1"></script>
   <script src="vendor/pokersolver.min.js?v=20260805-2"></script>
   <script src="vendor/pokertools-engine.min.js?v=20260805-3"></script>
+  <script src="scenario-advisor.js?v=20260807-1"></script>
   <script src="live-practice.js?v=20260807-1"></script>
   <script src="player-profile.js?v=20260806-1"></script>
   <script src="data-sync.js?v=20260806-1"></script>
