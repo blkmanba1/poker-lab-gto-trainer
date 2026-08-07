@@ -113,7 +113,7 @@
 
     .mode-switch {
       display: grid;
-      grid-template-columns: repeat(5, minmax(68px, 1fr));
+      grid-template-columns: repeat(6, minmax(68px, 1fr));
       gap: 3px;
       padding: 4px;
       background: #edf1ef;
@@ -136,6 +136,23 @@
       color: var(--ink);
       box-shadow: 0 1px 4px rgba(17, 35, 27, 0.1);
       font-weight: 600;
+    }
+
+    .mode-link {
+      display: grid;
+      place-items: center;
+      min-height: 34px;
+      padding: 5px 13px;
+      border-radius: 4px;
+      color: var(--muted);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .mode-link:hover,
+    .mode-link:focus-visible {
+      background: var(--paper-strong);
+      color: var(--ink);
     }
 
     .scoreboard {
@@ -944,7 +961,7 @@
       .brand-subtitle { display: none; }
       .brand-name { font-size: 18px; }
       .brand-mark { width: 34px; height: 34px; }
-      .mode-switch { grid-template-columns: repeat(5, 1fr); }
+      .mode-switch { grid-template-columns: repeat(6, 1fr); }
       .mode-switch button { padding-inline: 6px; }
       .spot-title { font-size: 23px; }
       .table-stage { min-height: 330px; }
@@ -1005,6 +1022,7 @@
       <button type="button" data-mode="postflop" aria-pressed="false">翻后</button>
       <button type="button" data-mode="live" aria-pressed="false">对战桌</button>
       <button type="button" data-mode="advisor" aria-pressed="false">推演台</button>
+      <a class="mode-link" href="range.html">GTO 表</a>
     </nav>
 
     <div class="scoreboard">

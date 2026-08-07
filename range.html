@@ -1,0 +1,1862 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GTO 范围工作台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #eef1ef;
+      --surface: #ffffff;
+      --surface-2: #f5f7f6;
+      --ink: #17221d;
+      --muted: #66736d;
+      --line: #d8dedb;
+      --line-strong: #bac5c0;
+      --felt: #176b4d;
+      --felt-dark: #0f5039;
+      --felt-soft: #dceee7;
+      --fold: #c8cfcc;
+      --call: #3e73a8;
+      --raise: #d65d4a;
+      --allin: #d7a627;
+      --focus: #1266cc;
+      --danger: #9f3a2d;
+      --shadow: 0 8px 24px rgba(23, 34, 29, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; }
+
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+      letter-spacing: 0;
+    }
+
+    button, input, select { font: inherit; letter-spacing: 0; }
+    button, select, input[type="number"], input[type="range"] { accent-color: var(--felt); }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--focus) 32%, transparent);
+      outline-offset: 2px;
+    }
+
+    .topbar {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 12px 22px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand { min-width: 0; }
+
+    .brand h1 {
+      margin: 0;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 22px;
+      font-weight: 500;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .data-status {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .data-status::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--raise);
+    }
+
+    .data-status-short { display: none; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 280px minmax(620px, 1fr) 280px;
+      min-height: calc(100vh - 64px);
+      background: var(--surface);
+    }
+
+    .controls,
+    .detail {
+      padding: 20px;
+      background: var(--surface-2);
+    }
+
+    .controls { border-right: 1px solid var(--line); }
+    .detail { border-left: 1px solid var(--line); }
+
+    .section-title {
+      margin: 0 0 14px;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 15px;
+      font-weight: 500;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 15px;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    label,
+    .field-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    select,
+    input[type="number"] {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: var(--surface);
+      color: var(--ink);
+      padding: 7px 10px;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .segmented button,
+    .preset-row button {
+      min-height: 34px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .segmented button[aria-pressed="true"] {
+      background: var(--felt);
+      color: #ffffff;
+    }
+
+    .stack-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .stack-value {
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 24px;
+      font-weight: 500;
+      color: var(--felt-dark);
+    }
+
+    input[type="range"] { width: 100%; }
+
+    .preset-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 4px;
+    }
+
+    .preset-row button {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      color: var(--ink);
+    }
+
+    .preset-row button:hover { border-color: var(--felt); }
+
+    .switch-line {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 17px 0 13px;
+    }
+
+    .switch-line input { width: 18px; height: 18px; }
+
+    .calculator[hidden],
+    .conditional[hidden] { display: none; }
+
+    .solution-match {
+      margin-top: 18px;
+      padding-top: 15px;
+      border-top: 1px solid var(--line);
+    }
+
+    .match-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .match-value {
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    .match-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .matrix-area {
+      min-width: 0;
+      padding: 20px 22px 24px;
+      background: var(--surface);
+    }
+
+    .matrix-toolbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 14px;
+    }
+
+    .spot-title {
+      margin: 0;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 20px;
+      font-weight: 500;
+    }
+
+    .spot-subtitle {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .range-total {
+      flex: 0 0 auto;
+      text-align: right;
+    }
+
+    .range-total strong {
+      display: block;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 25px;
+      font-weight: 500;
+      color: var(--felt-dark);
+    }
+
+    .range-total span { color: var(--muted); font-size: 12px; }
+
+    .matrix-scroll {
+      overflow-x: auto;
+      padding-bottom: 5px;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(13, minmax(40px, 1fr));
+      gap: 4px;
+      min-width: 620px;
+      width: 100%;
+    }
+
+    .hand-cell {
+      position: relative;
+      aspect-ratio: 1;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background-color: var(--cell-bg, var(--surface-2));
+      color: var(--ink);
+      cursor: pointer;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+
+    .hand-cell::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 5px;
+      background: var(--mix);
+    }
+
+    .hand-cell:hover {
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+      z-index: 1;
+    }
+
+    .hand-cell[aria-pressed="true"] {
+      border: 2px solid var(--felt-dark);
+      box-shadow: inset 0 0 0 1px var(--surface);
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 13px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: var(--swatch);
+    }
+
+    .matrix-footnote {
+      margin: 14px 0 0;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .selected-hand {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .selected-hand strong {
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 42px;
+      font-weight: 500;
+      color: var(--felt-dark);
+    }
+
+    .selected-hand span {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .mix-list { margin-top: 16px; }
+
+    .mix-row {
+      display: grid;
+      grid-template-columns: 54px 1fr 45px;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 11px;
+    }
+
+    .mix-label { font-size: 12px; font-weight: 500; }
+
+    .mix-track {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 4px;
+      background: var(--line);
+    }
+
+    .mix-fill {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--bar);
+      transition: width 180ms ease;
+    }
+
+    .mix-number {
+      text-align: right;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .hand-advice {
+      margin: 18px 0 0;
+      padding: 12px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      color: var(--ink);
+    }
+
+    .context-list {
+      display: grid;
+      gap: 8px;
+      margin: 16px 0 0;
+    }
+
+    .context-list div {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .context-list dt { color: var(--muted); }
+    .context-list dd { margin: 0; text-align: right; font-weight: 500; }
+
+    .warning {
+      margin-top: 18px;
+      padding: 12px;
+      border-left: 3px solid var(--raise);
+      background: color-mix(in srgb, var(--raise) 8%, var(--surface));
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    [hidden] { display: none !important; }
+
+    .mode-switch {
+      width: 238px;
+      flex: 0 0 auto;
+    }
+
+    .postflop-workspace {
+      display: grid;
+      grid-template-columns: 300px minmax(520px, 1fr) 300px;
+      min-height: calc(100vh - 64px);
+      background: var(--surface);
+    }
+
+    .post-controls,
+    .source-panel {
+      padding: 20px;
+      background: var(--surface-2);
+    }
+
+    .post-controls { border-right: 1px solid var(--line); }
+    .source-panel { border-left: 1px solid var(--line); }
+
+    .post-analysis {
+      min-width: 0;
+      padding: 20px 24px 28px;
+    }
+
+    .post-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      margin: 18px 0 22px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .metric {
+      min-width: 0;
+      padding: 14px;
+      background: var(--surface);
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 3px;
+      color: var(--felt-dark);
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 25px;
+      font-weight: 500;
+    }
+
+    .metric span,
+    .metric small { color: var(--muted); font-size: 12px; }
+    .metric small { display: block; margin-top: 3px; }
+
+    .decision-banner {
+      padding: 16px 0;
+      border-top: 2px solid var(--felt);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .decision-banner strong {
+      display: block;
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 24px;
+      font-weight: 500;
+    }
+
+    .decision-banner p { margin: 5px 0 0; color: var(--muted); }
+
+    .decision-list {
+      display: grid;
+      gap: 0;
+      margin-top: 8px;
+    }
+
+    .decision-step {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr);
+      gap: 12px;
+      padding: 15px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .step-number {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      color: var(--felt-dark);
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-weight: 600;
+    }
+
+    .decision-step h3 { margin: 1px 0 4px; font-size: 14px; font-weight: 600; }
+    .decision-step p { margin: 0; color: var(--muted); }
+
+    .source-link {
+      display: block;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .source-link:hover { color: var(--felt-dark); }
+    .source-link small { display: block; margin-top: 2px; color: var(--muted); }
+
+    .source-badge {
+      display: inline-block;
+      margin-right: 5px;
+      color: var(--felt-dark);
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-weight: 600;
+    }
+
+    .hand-jump {
+      display: grid;
+      grid-template-columns: minmax(150px, 220px) auto;
+      align-items: end;
+      gap: 8px;
+      margin: 0 0 14px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    .hand-jump .field { margin: 0; }
+
+    .primary-action,
+    .secondary-action {
+      min-height: 38px;
+      border-radius: 4px;
+      padding: 8px 13px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .primary-action {
+      border: 1px solid var(--felt-dark);
+      background: var(--felt);
+      color: #ffffff;
+    }
+
+    .primary-action:hover { background: var(--felt-dark); }
+
+    .secondary-action {
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .detail-actions {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .hand-context {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hand-context strong {
+      color: var(--felt-dark);
+      font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+      font-size: 28px;
+      font-weight: 500;
+    }
+
+    dialog.hand-sheet {
+      width: min(900px, calc(100vw - 32px));
+      max-height: calc(100vh - 32px);
+      overflow: hidden;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: 0 24px 64px rgba(23, 34, 29, 0.24);
+    }
+
+    dialog.hand-sheet::backdrop { background: rgba(18, 29, 24, 0.52); }
+
+    .sheet-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    .sheet-title { margin: 0; font-size: 21px; font-weight: 600; }
+    .sheet-subtitle { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+
+    .icon-button {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 36px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .sheet-body { max-height: calc(100vh - 190px); overflow: auto; padding: 20px; }
+    .strategy-scroll { overflow-x: auto; border: 1px solid var(--line); }
+
+    .strategy-table {
+      width: 100%;
+      min-width: 650px;
+      border-collapse: collapse;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .strategy-table th,
+    .strategy-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+    }
+
+    .strategy-table th {
+      position: sticky;
+      top: 0;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .strategy-table th:first-child,
+    .strategy-table td:first-child { text-align: left; }
+    .strategy-table tbody tr:last-child td { border-bottom: 0; }
+    .strategy-table tbody tr.current-depth { background: var(--felt-soft); }
+    .strategy-table td[data-action="call"] { color: var(--call); }
+    .strategy-table td[data-action="raise"] { color: var(--raise); }
+    .strategy-table td[data-action="allin"] { color: #8a6500; }
+
+    .depth-choice {
+      border: 0;
+      background: transparent;
+      color: var(--felt-dark);
+      cursor: pointer;
+      font-weight: 700;
+      padding: 5px 0;
+    }
+
+    .sheet-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+
+    .sheet-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 14px 20px;
+      border-top: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    @media (max-width: 1180px) {
+      .workspace { grid-template-columns: 260px minmax(590px, 1fr); }
+      .detail {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: 220px minmax(260px, 1fr) minmax(260px, 1fr);
+        gap: 22px;
+        border-top: 1px solid var(--line);
+        border-left: 0;
+      }
+      .mix-list, .warning { margin-top: 0; }
+      .postflop-workspace { grid-template-columns: 280px minmax(500px, 1fr); }
+      .source-panel {
+        grid-column: 1 / -1;
+        border-top: 1px solid var(--line);
+        border-left: 0;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .topbar { align-items: flex-start; padding: 12px 15px; }
+      .workspace { display: block; }
+      .controls, .detail, .matrix-area { padding: 16px; }
+      .controls { border-right: 0; border-bottom: 1px solid var(--line); }
+      .detail { display: block; border-top: 1px solid var(--line); }
+      .matrix-toolbar { align-items: flex-end; }
+      .matrix { grid-template-columns: repeat(13, 42px); }
+      .hand-cell { font-size: 12px; }
+      .mix-list { margin-top: 16px; }
+      .warning { margin-top: 18px; }
+      .postflop-workspace { display: block; }
+      .post-controls, .post-analysis, .source-panel { padding: 16px; }
+      .post-controls { border-right: 0; border-bottom: 1px solid var(--line); }
+      .source-panel { border-top: 1px solid var(--line); }
+    }
+
+    @media (max-width: 500px) {
+      .brand p { display: none; }
+      .data-status-full { display: none; }
+      .data-status-short { display: inline; }
+      .field-row { grid-template-columns: 1fr; }
+      .matrix-toolbar { align-items: flex-start; }
+      .spot-title { font-size: 18px; }
+      .range-total strong { font-size: 21px; }
+      .topbar { flex-wrap: wrap; }
+      .mode-switch { width: 100%; order: 3; }
+      .post-grid { grid-template-columns: 1fr; }
+      .hand-jump { grid-template-columns: 1fr; }
+      .sheet-header, .sheet-body, .sheet-footer { padding-left: 14px; padding-right: 14px; }
+      .sheet-footer { display: grid; grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>GTO 范围工作台</h1>
+      <p>翻前范围与翻后决策学习</p>
+    </div>
+    <nav class="segmented mode-switch" id="study-mode" aria-label="学习模式">
+      <button type="button" data-mode="preflop" aria-pressed="true">翻前范围</button>
+      <button type="button" data-mode="postflop" aria-pressed="false">翻后决策</button>
+    </nav>
+    <div class="data-status">
+      <span class="data-status-full">教学演示数据 · 非精确 Solver 解</span>
+      <span class="data-status-short">演示数据</span>
+    </div>
+  </header>
+
+  <main class="workspace" id="preflop-workspace">
+    <aside class="controls" aria-label="牌局参数">
+      <h2 class="section-title">牌局参数</h2>
+
+      <div class="field">
+        <span class="field-label">牌局类型</span>
+        <div class="segmented" id="game-type" aria-label="牌局类型">
+          <button type="button" data-value="cash" aria-pressed="true">现金桌</button>
+          <button type="button" data-value="tournament" aria-pressed="false">锦标赛</button>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="table-size">桌型</label>
+          <select id="table-size">
+            <option value="6">6 人桌</option>
+            <option value="9">9 人桌</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="hero-position">我的位置</label>
+          <select id="hero-position"></select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="scenario">当前场景</label>
+        <select id="scenario">
+          <option value="rfi">前面都弃牌，率先入池</option>
+          <option value="vs-open">面对一次加注</option>
+          <option value="vs-3bet">开池后面对 3Bet</option>
+        </select>
+      </div>
+
+      <div class="field-row conditional" id="opponent-fields" hidden>
+        <div class="field">
+          <label for="opponent-position">对手位置</label>
+          <select id="opponent-position"></select>
+        </div>
+        <div class="field">
+          <label for="open-size">对手尺寸</label>
+          <select id="open-size">
+            <option value="2">2.0BB</option>
+            <option value="2.2">2.2BB</option>
+            <option value="2.5" selected>2.5BB</option>
+            <option value="3">3.0BB</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="stack-heading">
+          <label for="stack-input">有效筹码</label>
+          <output class="stack-value" id="stack-output" for="stack-input stack-range">100BB</output>
+        </div>
+        <input id="stack-input" type="number" min="1" max="500" step="1" value="100" inputmode="numeric">
+        <input id="stack-range" type="range" min="1" max="500" step="1" value="100" aria-label="有效筹码滑块">
+      </div>
+
+      <div class="preset-row" id="stack-presets" aria-label="常用筹码深度">
+        <button type="button" data-stack="20">20</button>
+        <button type="button" data-stack="40">40</button>
+        <button type="button" data-stack="60">60</button>
+        <button type="button" data-stack="100">100</button>
+        <button type="button" data-stack="150">150</button>
+        <button type="button" data-stack="200">200</button>
+        <button type="button" data-stack="300">300</button>
+        <button type="button" data-stack="500">500</button>
+      </div>
+
+      <label class="switch-line" for="auto-effective">
+        <input id="auto-effective" type="checkbox">
+        <span>根据双方筹码自动计算</span>
+      </label>
+
+      <div class="calculator" id="calculator" hidden>
+        <div class="field-row">
+          <div class="field">
+            <label for="hero-stack">我的筹码</label>
+            <input id="hero-stack" type="number" min="1" max="500" step="1" value="137">
+          </div>
+          <div class="field">
+            <label for="villain-stack">对手筹码</label>
+            <input id="villain-stack" type="number" min="1" max="500" step="1" value="83">
+          </div>
+        </div>
+      </div>
+
+      <div class="solution-match" aria-live="polite">
+        <div class="match-line">
+          <span class="field-label">采用档位</span>
+          <strong class="match-value" id="matched-stack">100BB</strong>
+        </div>
+        <p class="match-note" id="match-note">与输入相同。当前为精确档位匹配。</p>
+      </div>
+    </aside>
+
+    <section class="matrix-area" aria-labelledby="spot-title">
+      <div class="matrix-toolbar">
+        <div>
+          <h2 class="spot-title" id="spot-title">6 人现金桌 · BTN · 率先入池</h2>
+          <p class="spot-subtitle" id="spot-subtitle">100BB 档位 · 教学演示范围</p>
+        </div>
+        <div class="range-total">
+          <strong id="playable-total">—</strong>
+          <span>继续范围</span>
+        </div>
+      </div>
+
+      <div class="hand-jump" aria-label="按手牌进入策略表">
+        <div class="field">
+          <label for="hand-picker">我的起手牌</label>
+          <select id="hand-picker"></select>
+        </div>
+        <button class="primary-action" id="open-picked-hand" type="button">打开手牌策略表</button>
+      </div>
+
+      <div class="matrix-scroll">
+        <div class="matrix" id="matrix" role="grid" aria-label="13 乘 13 起手牌范围矩阵"></div>
+      </div>
+
+      <div class="legend" aria-label="行动图例">
+        <span class="legend-item"><span class="swatch" style="--swatch: var(--fold)"></span>弃牌</span>
+        <span class="legend-item"><span class="swatch" style="--swatch: var(--call)"></span>跟注</span>
+        <span class="legend-item"><span class="swatch" style="--swatch: var(--raise)"></span>加注</span>
+        <span class="legend-item"><span class="swatch" style="--swatch: var(--allin)"></span>全下</span>
+        <span class="legend-item">格子底边按行动频率分段</span>
+      </div>
+
+      <p class="matrix-footnote" id="matrix-footnote">
+        这套内置范围仅用于验证查表流程，不应当作真实牌局中的精确 GTO 建议。
+      </p>
+    </section>
+
+    <aside class="detail" aria-label="手牌详情">
+      <div>
+        <h2 class="section-title">手牌详情</h2>
+        <div class="selected-hand">
+          <strong id="selected-hand">AKs</strong>
+          <span id="hand-class">同花非对子</span>
+        </div>
+      </div>
+
+      <div class="mix-list" aria-label="行动频率">
+        <div class="mix-row">
+          <span class="mix-label">弃牌</span>
+          <span class="mix-track"><span class="mix-fill" id="fold-bar" style="--bar: var(--fold)"></span></span>
+          <span class="mix-number" id="fold-value">0%</span>
+        </div>
+        <div class="mix-row">
+          <span class="mix-label">跟注</span>
+          <span class="mix-track"><span class="mix-fill" id="call-bar" style="--bar: var(--call)"></span></span>
+          <span class="mix-number" id="call-value">0%</span>
+        </div>
+        <div class="mix-row">
+          <span class="mix-label">加注</span>
+          <span class="mix-track"><span class="mix-fill" id="raise-bar" style="--bar: var(--raise)"></span></span>
+          <span class="mix-number" id="raise-value">100%</span>
+        </div>
+        <div class="mix-row">
+          <span class="mix-label">全下</span>
+          <span class="mix-track"><span class="mix-fill" id="allin-bar" style="--bar: var(--allin)"></span></span>
+          <span class="mix-number" id="allin-value">0%</span>
+        </div>
+      </div>
+
+      <div>
+        <p class="hand-advice" id="hand-advice">该组合在当前演示模型中以加注为主。</p>
+        <dl class="context-list">
+          <div><dt>输入深度</dt><dd id="detail-input-stack">100BB</dd></div>
+          <div><dt>解算档位</dt><dd id="detail-matched-stack">100BB</dd></div>
+          <div><dt>匹配状态</dt><dd id="detail-match-status">精确档位</dd></div>
+          <div><dt>数据版本</dt><dd>教学演示 v0.2</dd></div>
+        </dl>
+        <div class="detail-actions">
+          <button class="primary-action" id="open-hand-table" type="button">打开 AKs 策略表</button>
+          <button class="secondary-action" id="send-hand-postflop" type="button">带入翻后决策</button>
+        </div>
+        <div class="warning">
+          实战策略还会受到抽水、前注、开池尺寸和多人行动影响。导入经过授权的 Solver 数据后，才能把这里标记为精确 GTO。
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <main class="postflop-workspace" id="postflop-workspace" hidden>
+    <aside class="post-controls" aria-label="翻后牌局参数">
+      <h2 class="section-title">翻后牌局参数</h2>
+
+      <div class="field">
+        <label for="post-hand">我的手牌</label>
+        <select id="post-hand"></select>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="post-game">牌局类型</label>
+          <select id="post-game">
+            <option value="cash">现金桌</option>
+            <option value="tournament">锦标赛</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="post-street">当前街</label>
+          <select id="post-street">
+            <option value="flop">翻牌</option>
+            <option value="turn">转牌</option>
+            <option value="river">河牌</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="post-pot-type">底池类型</label>
+          <select id="post-pot-type">
+            <option value="srp">单加注底池</option>
+            <option value="3bet">3Bet 底池</option>
+            <option value="limped">跛入底池</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="post-players">参与人数</label>
+          <select id="post-players">
+            <option value="2">单挑</option>
+            <option value="3">三人</option>
+            <option value="4">四人及以上</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="post-position">我的位置</label>
+          <select id="post-position">
+            <option value="ip">有利位置 IP</option>
+            <option value="oop">不利位置 OOP</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="post-stack">有效筹码 BB</label>
+          <input id="post-stack" type="number" min="1" max="500" step="1" value="100">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="post-pot">行动前底池 BB</label>
+          <input id="post-pot" type="number" min="0.5" max="1000" step="0.5" value="10">
+        </div>
+        <div class="field">
+          <label for="post-bet">面对下注 BB</label>
+          <input id="post-bet" type="number" min="0" max="1000" step="0.5" value="5">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="post-board">牌面结构</label>
+        <select id="post-board">
+          <option value="dry-high">高张干燥面</option>
+          <option value="broadway">高张连接面</option>
+          <option value="low-connected">低张连接面</option>
+          <option value="paired">对子面</option>
+          <option value="two-tone">两同花听花面</option>
+          <option value="monotone">三同花面</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="post-action">当前行动节点</label>
+        <select id="post-action">
+          <option value="checked-to">对手过牌到我</option>
+          <option value="first-oop">我在 OOP 首先行动</option>
+          <option value="facing-bet" selected>面对下注</option>
+          <option value="after-call">上一街下注被跟注</option>
+          <option value="after-checkraise">上一街发生过牌加注</option>
+        </select>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="post-equity">总体范围优势</label>
+          <select id="post-equity">
+            <option value="hero">我方</option>
+            <option value="close" selected>接近</option>
+            <option value="villain">对手</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="post-nut">坚果优势</label>
+          <select id="post-nut">
+            <option value="hero">我方</option>
+            <option value="close" selected>接近</option>
+            <option value="villain">对手</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="post-tendency">已观察到的对手偏离</label>
+        <select id="post-tendency">
+          <option value="unknown">未知 / 先用基线</option>
+          <option value="overfold">过度弃牌</option>
+          <option value="overcall">过度跟注</option>
+          <option value="underbluff">诈唬不足</option>
+          <option value="overbluff">诈唬过多</option>
+          <option value="passive">过牌过多 / 被动</option>
+        </select>
+      </div>
+    </aside>
+
+    <section class="post-analysis" aria-labelledby="post-title">
+      <div class="hand-context">
+        <span class="field-label">当前手牌</span>
+        <strong id="post-hand-display">AKs</strong>
+      </div>
+      <div class="matrix-toolbar">
+        <div>
+          <h2 class="spot-title" id="post-title">翻牌 · 单加注底池 · 单挑</h2>
+          <p class="spot-subtitle" id="post-subtitle">100BB · 面对下注 · 课程框架</p>
+        </div>
+      </div>
+
+      <div class="post-grid" aria-label="数学基线">
+        <div class="metric"><span>SPR</span><strong id="post-spr">10.0</strong><small>有效筹码 / 当前底池</small></div>
+        <div class="metric"><span>底池赔率</span><strong id="post-pot-odds">25.0%</strong><small>跟注所需的直接权益</small></div>
+        <div class="metric"><span>简化 MDF</span><strong id="post-mdf">66.7%</strong><small>范围层参考，不是单牌指令</small></div>
+      </div>
+
+      <div class="decision-banner" aria-live="polite">
+        <span class="field-label">当前节点优先检查</span>
+        <strong id="post-headline">先定防守范围，再挑跟注与加注组合</strong>
+        <p id="post-summary">价格只是起点；范围劣势、后续街和权益实现会让实际防守偏离 MDF。</p>
+      </div>
+
+      <div class="decision-list" id="post-decisions"></div>
+    </section>
+
+    <aside class="source-panel" aria-label="知识来源">
+      <h2 class="section-title">来源与边界</h2>
+      <a class="source-link" href="../knowledge/topics/翻后决策框架.md">
+        翻后决策框架<small>完整的八步检查顺序</small>
+      </a>
+      <a class="source-link" href="../knowledge/concepts/核心概念.md">
+        核心概念<small>范围、尺度、防守、阻挡、donk、ICM</small>
+      </a>
+      <a class="source-link" href="../knowledge/sources/catalog.md">
+        87 份来源目录<small>原始路径、日期、标签与校验摘要</small>
+      </a>
+      <div class="warning" id="post-warning">
+        这里输出的是来源支持的学习框架，不是精确 Solver 解。需要频率时必须补齐完整范围、抽水/前注和下注树。
+      </div>
+    </aside>
+  </main>
+
+  <dialog class="hand-sheet" id="hand-sheet" aria-labelledby="hand-sheet-title">
+    <div class="sheet-header">
+      <div>
+        <h2 class="sheet-title" id="hand-sheet-title">AKs · 手牌策略表</h2>
+        <p class="sheet-subtitle" id="hand-sheet-context">6 人现金桌 · BTN · 率先入池</p>
+      </div>
+      <button class="icon-button" id="close-hand-sheet" type="button" aria-label="关闭策略表" title="关闭">×</button>
+    </div>
+    <div class="sheet-body">
+      <div class="strategy-scroll">
+        <table class="strategy-table">
+          <thead>
+            <tr>
+              <th scope="col">有效筹码</th>
+              <th scope="col">弃牌</th>
+              <th scope="col">跟注</th>
+              <th scope="col">加注</th>
+              <th scope="col">全下</th>
+              <th scope="col">主要行动</th>
+            </tr>
+          </thead>
+          <tbody id="hand-strategy-body"></tbody>
+        </table>
+      </div>
+      <p class="sheet-note">点击任意 BB 深度即可应用到当前范围。表内频率来自教学演示模型，并非经过授权的精确 Solver 解。</p>
+    </div>
+    <div class="sheet-footer">
+      <button class="secondary-action" id="sheet-close-action" type="button">返回范围矩阵</button>
+      <button class="primary-action" id="sheet-send-postflop" type="button">带入翻后决策</button>
+    </div>
+  </dialog>
+
+  <script>
+    "use strict";
+
+    const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
+    const ACTIONS = ["fold", "call", "raise", "allin"];
+    const ACTION_NAMES = { fold: "弃牌", call: "跟注", raise: "加注", allin: "全下" };
+    const POSITION_NAMES = { UTG: "UTG", UTG1: "UTG+1", UTG2: "UTG+2", MP: "MP", HJ: "HJ", CO: "CO", BTN: "BTN", SB: "SB", BB: "BB" };
+    const POSITIONS = {
+      6: ["UTG", "HJ", "CO", "BTN", "SB", "BB"],
+      9: ["UTG", "UTG1", "UTG2", "MP", "HJ", "CO", "BTN", "SB", "BB"]
+    };
+    const DEPTHS = {
+      cash: [20, 40, 60, 80, 100, 150, 200, 300, 500],
+      tournament: [10, 15, 20, 25, 30, 40, 60, 100]
+    };
+    const SCENARIO_NAMES = {
+      "rfi": "率先入池",
+      "vs-open": "面对加注",
+      "vs-3bet": "面对 3Bet"
+    };
+
+    const state = {
+      gameType: "cash",
+      tableSize: 6,
+      heroPosition: "BTN",
+      opponentPosition: "CO",
+      scenario: "rfi",
+      inputStack: 100,
+      matchedStack: 100,
+      selectedHand: "AKs"
+    };
+
+    const elements = {
+      gameType: document.getElementById("game-type"),
+      tableSize: document.getElementById("table-size"),
+      heroPosition: document.getElementById("hero-position"),
+      scenario: document.getElementById("scenario"),
+      opponentFields: document.getElementById("opponent-fields"),
+      opponentPosition: document.getElementById("opponent-position"),
+      openSize: document.getElementById("open-size"),
+      stackInput: document.getElementById("stack-input"),
+      stackRange: document.getElementById("stack-range"),
+      stackOutput: document.getElementById("stack-output"),
+      stackPresets: document.getElementById("stack-presets"),
+      autoEffective: document.getElementById("auto-effective"),
+      calculator: document.getElementById("calculator"),
+      heroStack: document.getElementById("hero-stack"),
+      villainStack: document.getElementById("villain-stack"),
+      matchedStack: document.getElementById("matched-stack"),
+      matchNote: document.getElementById("match-note"),
+      spotTitle: document.getElementById("spot-title"),
+      spotSubtitle: document.getElementById("spot-subtitle"),
+      playableTotal: document.getElementById("playable-total"),
+      matrix: document.getElementById("matrix"),
+      handPicker: document.getElementById("hand-picker"),
+      openPickedHand: document.getElementById("open-picked-hand"),
+      selectedHand: document.getElementById("selected-hand"),
+      handClass: document.getElementById("hand-class"),
+      handAdvice: document.getElementById("hand-advice"),
+      openHandTable: document.getElementById("open-hand-table"),
+      sendHandPostflop: document.getElementById("send-hand-postflop"),
+      detailInputStack: document.getElementById("detail-input-stack"),
+      detailMatchedStack: document.getElementById("detail-matched-stack"),
+      detailMatchStatus: document.getElementById("detail-match-status"),
+      handSheet: document.getElementById("hand-sheet"),
+      handSheetTitle: document.getElementById("hand-sheet-title"),
+      handSheetContext: document.getElementById("hand-sheet-context"),
+      handStrategyBody: document.getElementById("hand-strategy-body"),
+      closeHandSheet: document.getElementById("close-hand-sheet"),
+      sheetCloseAction: document.getElementById("sheet-close-action"),
+      sheetSendPostflop: document.getElementById("sheet-send-postflop")
+    };
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function normaliseWeights(weights) {
+      const safe = ACTIONS.map(action => Math.max(0, weights[action] || 0));
+      const total = safe.reduce((sum, value) => sum + value, 0) || 1;
+      const exact = safe.map(value => value / total * 100);
+      const rounded = exact.map(Math.floor);
+      let remaining = 100 - rounded.reduce((sum, value) => sum + value, 0);
+      const order = exact
+        .map((value, index) => ({ index, fraction: value - rounded[index] }))
+        .sort((a, b) => b.fraction - a.fraction);
+      for (let index = 0; index < remaining; index += 1) rounded[order[index].index] += 1;
+      const result = {};
+      ACTIONS.forEach((action, index) => { result[action] = rounded[index]; });
+      return result;
+    }
+
+    function makeHand(rowIndex, columnIndex) {
+      if (rowIndex === columnIndex) return RANKS[rowIndex] + RANKS[columnIndex];
+      if (rowIndex < columnIndex) return RANKS[rowIndex] + RANKS[columnIndex] + "s";
+      return RANKS[columnIndex] + RANKS[rowIndex] + "o";
+    }
+
+    function allStartingHands() {
+      const hands = [];
+      RANKS.forEach((_, rowIndex) => {
+        RANKS.forEach((__, columnIndex) => hands.push(makeHand(rowIndex, columnIndex)));
+      });
+      return hands;
+    }
+
+    function handOption(hand) {
+      const option = document.createElement("option");
+      option.value = hand;
+      option.textContent = hand;
+      return option;
+    }
+
+    function handMeta(hand) {
+      const pair = hand.length === 2;
+      const suited = hand.endsWith("s");
+      const highIndex = RANKS.indexOf(hand[0]);
+      const lowIndex = pair ? highIndex : RANKS.indexOf(hand[1]);
+      return { pair, suited, highIndex, lowIndex };
+    }
+
+    function handStrength(hand) {
+      const { pair, suited, highIndex, lowIndex } = handMeta(hand);
+      if (pair) return clamp(0.99 - highIndex * 0.053, 0.32, 0.99);
+
+      const high = 12 - highIndex;
+      const low = 12 - lowIndex;
+      const gap = Math.max(0, lowIndex - highIndex - 1);
+      const broadway = highIndex <= 4 ? 0.055 : 0;
+      const connected = gap === 0 ? 0.07 : gap === 1 ? 0.035 : 0;
+      const suitedBonus = suited ? 0.085 : 0;
+      const wheelBonus = hand[0] === "A" && lowIndex >= 8 && suited ? 0.035 : 0;
+      return clamp(0.18 + high * 0.035 + low * 0.018 + broadway + connected + suitedBonus + wheelBonus - gap * 0.025, 0.08, 0.95);
+    }
+
+    function positionLooseness(position) {
+      const values = { UTG: 0, UTG1: 0.018, UTG2: 0.035, MP: 0.05, HJ: 0.08, CO: 0.145, BTN: 0.225, SB: 0.17, BB: 0.26 };
+      return values[position] || 0;
+    }
+
+    function strategyFor(hand, depthOverride = state.matchedStack) {
+      const strength = handStrength(hand);
+      const position = positionLooseness(state.heroPosition);
+      const depth = depthOverride;
+      const tournament = state.gameType === "tournament";
+      const shortStack = clamp((40 - depth) / 35, 0, 1);
+      const sizePenalty = Math.max(0, Number(elements.openSize.value) - 2) * 0.025;
+      let weights;
+
+      if (state.scenario === "rfi") {
+        const threshold = 0.71 - position - (tournament ? shortStack * 0.055 : 0);
+        const edge = strength - threshold;
+        if (edge < -0.055) weights = { fold: 100 };
+        else if (edge < 0.025) weights = { fold: 55 - edge * 500, raise: 45 + edge * 500 };
+        else weights = { raise: 100 };
+
+        if (depth <= 15 && strength > 0.67) {
+          const allin = clamp((0.86 - strength) * -260 + 25, 20, 100);
+          weights = { raise: 100 - allin, allin };
+        }
+      } else if (state.scenario === "vs-open") {
+        const openerPenalty = Math.max(0, positionLooseness(state.heroPosition) - positionLooseness(state.opponentPosition)) * 0.18;
+        const continueThreshold = 0.61 - position * 0.28 + openerPenalty + sizePenalty - shortStack * 0.04;
+        const raiseThreshold = 0.82 - position * 0.12 - shortStack * 0.07;
+        if (strength < continueThreshold - 0.04) weights = { fold: 100 };
+        else if (strength < continueThreshold + 0.035) weights = { fold: 55, call: 35, raise: 10 };
+        else if (strength < raiseThreshold) weights = { fold: 5, call: 82, raise: 13 };
+        else weights = depth <= 25 ? { call: 18, allin: 82 } : { call: 24, raise: 76 };
+      } else {
+        const continueThreshold = 0.72 - position * 0.12 + sizePenalty * 0.7 - shortStack * 0.055;
+        const premiumThreshold = 0.9 - shortStack * 0.08;
+        if (strength < continueThreshold - 0.035) weights = { fold: 100 };
+        else if (strength < continueThreshold + 0.035) weights = { fold: 58, call: 34, raise: 8 };
+        else if (strength < premiumThreshold) weights = { fold: 10, call: 78, raise: 12 };
+        else weights = depth <= 35 ? { call: 12, allin: 88 } : { call: 30, raise: 70 };
+      }
+
+      return normaliseWeights(weights);
+    }
+
+    function nearestDepth(value) {
+      return DEPTHS[state.gameType].reduce((closest, depth) =>
+        Math.abs(depth - value) < Math.abs(closest - value) ? depth : closest
+      );
+    }
+
+    function fillPositionSelect(select, preferred) {
+      const positions = POSITIONS[state.tableSize];
+      const available = state.scenario === "rfi" ? positions.filter(position => position !== "BB") : positions;
+      select.replaceChildren(...available.map(position => {
+        const option = document.createElement("option");
+        option.value = position;
+        option.textContent = POSITION_NAMES[position];
+        return option;
+      }));
+      select.value = available.includes(preferred) ? preferred : available[available.length - 2];
+      return select.value;
+    }
+
+    function updatePositions() {
+      state.heroPosition = fillPositionSelect(elements.heroPosition, state.heroPosition);
+      const opponents = POSITIONS[state.tableSize].filter(position => position !== state.heroPosition);
+      elements.opponentPosition.replaceChildren(...opponents.map(position => {
+        const option = document.createElement("option");
+        option.value = position;
+        option.textContent = POSITION_NAMES[position];
+        return option;
+      }));
+      elements.opponentPosition.value = opponents.includes(state.opponentPosition) ? state.opponentPosition : opponents[0];
+      state.opponentPosition = elements.opponentPosition.value;
+    }
+
+    function updateStack(rawValue) {
+      const value = clamp(Math.round(Number(rawValue) || 1), 1, 500);
+      state.inputStack = value;
+      state.matchedStack = nearestDepth(value);
+      elements.stackInput.value = value;
+      elements.stackRange.value = value;
+      elements.stackOutput.value = value + "BB";
+      elements.stackOutput.textContent = value + "BB";
+      elements.matchedStack.textContent = state.matchedStack + "BB";
+
+      const delta = state.matchedStack - value;
+      if (delta === 0) {
+        elements.matchNote.textContent = "与输入相同。当前为精确档位匹配。";
+      } else {
+        const direction = delta > 0 ? "高" : "低";
+        elements.matchNote.textContent = `没有 ${value}BB 数据，使用最接近的 ${state.matchedStack}BB 档位（${direction} ${Math.abs(delta)}BB）。`;
+      }
+      renderAll();
+    }
+
+    function computeEffectiveStack() {
+      const hero = clamp(Math.round(Number(elements.heroStack.value) || 1), 1, 500);
+      const villain = clamp(Math.round(Number(elements.villainStack.value) || 1), 1, 500);
+      elements.heroStack.value = hero;
+      elements.villainStack.value = villain;
+      updateStack(Math.min(hero, villain));
+    }
+
+    function actionGradient(strategy) {
+      let cursor = 0;
+      const colors = { fold: "var(--fold)", call: "var(--call)", raise: "var(--raise)", allin: "var(--allin)" };
+      const stops = [];
+      ACTIONS.forEach(action => {
+        const next = cursor + strategy[action];
+        if (strategy[action] > 0) stops.push(`${colors[action]} ${cursor}% ${next}%`);
+        cursor = next;
+      });
+      return `linear-gradient(to right, ${stops.join(", ")})`;
+    }
+
+    function dominantAction(strategy) {
+      return ACTIONS.reduce((best, action) => strategy[action] > strategy[best] ? action : best, "fold");
+    }
+
+    function cellBackground(action) {
+      const backgrounds = {
+        fold: "color-mix(in srgb, var(--fold) 32%, var(--surface))",
+        call: "color-mix(in srgb, var(--call) 13%, var(--surface))",
+        raise: "color-mix(in srgb, var(--raise) 13%, var(--surface))",
+        allin: "color-mix(in srgb, var(--allin) 17%, var(--surface))"
+      };
+      return backgrounds[action];
+    }
+
+    function renderMatrix() {
+      const fragment = document.createDocumentFragment();
+      let playableCombos = 0;
+
+      RANKS.forEach((_, rowIndex) => {
+        RANKS.forEach((__, columnIndex) => {
+          const hand = makeHand(rowIndex, columnIndex);
+          const strategy = strategyFor(hand);
+          const continuing = 100 - strategy.fold;
+          const combos = hand.length === 2 ? 6 : hand.endsWith("s") ? 4 : 12;
+          playableCombos += combos * continuing / 100;
+
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "hand-cell";
+          button.textContent = hand;
+          button.dataset.hand = hand;
+          button.setAttribute("role", "gridcell");
+          button.setAttribute("aria-pressed", String(hand === state.selectedHand));
+          button.setAttribute("aria-label", `${hand}：${ACTIONS.map(action => `${ACTION_NAMES[action]} ${strategy[action]}%`).join("，")}`);
+          button.style.setProperty("--mix", actionGradient(strategy));
+          button.style.setProperty("--cell-bg", cellBackground(dominantAction(strategy)));
+          fragment.appendChild(button);
+        });
+      });
+
+      elements.matrix.replaceChildren(fragment);
+      elements.playableTotal.textContent = `${(playableCombos / 1326 * 100).toFixed(1)}%`;
+    }
+
+    function renderDetail() {
+      const strategy = strategyFor(state.selectedHand);
+      const meta = handMeta(state.selectedHand);
+      elements.selectedHand.textContent = state.selectedHand;
+      elements.handClass.textContent = meta.pair ? "口袋对子" : meta.suited ? "同花非对子" : "非同花非对子";
+
+      ACTIONS.forEach(action => {
+        document.getElementById(`${action}-bar`).style.width = strategy[action] + "%";
+        document.getElementById(`${action}-value`).textContent = strategy[action] + "%";
+      });
+
+      const dominant = dominantAction(strategy);
+      const mixed = ACTIONS.filter(action => strategy[action] >= 15);
+      elements.handAdvice.textContent = mixed.length > 1
+        ? `该组合在当前演示模型中采用混合策略，以${ACTION_NAMES[dominant]}为主。`
+        : `该组合在当前演示模型中以${ACTION_NAMES[dominant]}为主。`;
+      elements.detailInputStack.textContent = state.inputStack + "BB";
+      elements.detailMatchedStack.textContent = state.matchedStack + "BB";
+      elements.detailMatchStatus.textContent = state.inputStack === state.matchedStack ? "精确档位" : "最近档位";
+      elements.handPicker.value = state.selectedHand;
+      elements.openHandTable.textContent = `打开 ${state.selectedHand} 策略表`;
+    }
+
+    function selectHand(hand) {
+      state.selectedHand = hand;
+      renderMatrix();
+      renderDetail();
+    }
+
+    function renderHandSheet() {
+      const gameName = state.gameType === "cash" ? "现金桌" : "锦标赛";
+      const opponentText = state.scenario === "rfi" ? "" : ` · 对手 ${POSITION_NAMES[state.opponentPosition]}`;
+      elements.handSheetTitle.textContent = `${state.selectedHand} · 手牌策略表`;
+      elements.handSheetContext.textContent = `${state.tableSize} 人${gameName} · ${POSITION_NAMES[state.heroPosition]} · ${SCENARIO_NAMES[state.scenario]}${opponentText}`;
+
+      const rows = DEPTHS[state.gameType].map(depth => {
+        const strategy = strategyFor(state.selectedHand, depth);
+        const row = document.createElement("tr");
+        if (depth === state.matchedStack) row.className = "current-depth";
+
+        const depthCell = document.createElement("td");
+        const depthButton = document.createElement("button");
+        depthButton.type = "button";
+        depthButton.className = "depth-choice";
+        depthButton.dataset.depth = depth;
+        depthButton.textContent = `${depth}BB`;
+        depthButton.setAttribute("aria-label", `使用 ${depth}BB 档位`);
+        depthCell.appendChild(depthButton);
+        row.appendChild(depthCell);
+
+        ACTIONS.forEach(action => {
+          const cell = document.createElement("td");
+          cell.dataset.action = action;
+          cell.textContent = `${strategy[action]}%`;
+          row.appendChild(cell);
+        });
+
+        const dominantCell = document.createElement("td");
+        dominantCell.textContent = ACTION_NAMES[dominantAction(strategy)];
+        row.appendChild(dominantCell);
+        return row;
+      });
+      elements.handStrategyBody.replaceChildren(...rows);
+    }
+
+    function openHandSheet(hand = state.selectedHand) {
+      if (hand !== state.selectedHand) selectHand(hand);
+      renderHandSheet();
+      if (!elements.handSheet.open) elements.handSheet.showModal();
+    }
+
+    function renderHeader() {
+      const gameName = state.gameType === "cash" ? "现金桌" : "锦标赛";
+      const opponentText = state.scenario === "rfi" ? "" : ` · 对手 ${POSITION_NAMES[state.opponentPosition]}`;
+      elements.spotTitle.textContent = `${state.tableSize} 人${gameName} · ${POSITION_NAMES[state.heroPosition]} · ${SCENARIO_NAMES[state.scenario]}`;
+      elements.spotSubtitle.textContent = `${state.matchedStack}BB 档位${opponentText} · 教学演示范围`;
+    }
+
+    function renderAll() {
+      renderHeader();
+      renderMatrix();
+      renderDetail();
+    }
+
+    elements.gameType.addEventListener("click", event => {
+      const button = event.target.closest("button[data-value]");
+      if (!button) return;
+      state.gameType = button.dataset.value;
+      elements.gameType.querySelectorAll("button").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+      if (state.gameType === "tournament" && state.tableSize === 9) {
+        elements.tableSize.value = "9";
+      }
+      updateStack(state.inputStack);
+    });
+
+    elements.tableSize.addEventListener("change", () => {
+      state.tableSize = Number(elements.tableSize.value);
+      updatePositions();
+      renderAll();
+    });
+
+    elements.heroPosition.addEventListener("change", () => {
+      state.heroPosition = elements.heroPosition.value;
+      updatePositions();
+      renderAll();
+    });
+
+    elements.scenario.addEventListener("change", () => {
+      state.scenario = elements.scenario.value;
+      elements.opponentFields.hidden = state.scenario === "rfi";
+      updatePositions();
+      renderAll();
+    });
+
+    elements.opponentPosition.addEventListener("change", () => {
+      state.opponentPosition = elements.opponentPosition.value;
+      renderAll();
+    });
+
+    elements.openSize.addEventListener("change", renderAll);
+    elements.stackInput.addEventListener("input", () => {
+      if (elements.stackInput.value !== "") updateStack(elements.stackInput.value);
+    });
+    elements.stackRange.addEventListener("input", () => updateStack(elements.stackRange.value));
+
+    elements.stackPresets.addEventListener("click", event => {
+      const button = event.target.closest("button[data-stack]");
+      if (button) updateStack(button.dataset.stack);
+    });
+
+    elements.autoEffective.addEventListener("change", () => {
+      elements.calculator.hidden = !elements.autoEffective.checked;
+      elements.stackInput.disabled = elements.autoEffective.checked;
+      elements.stackRange.disabled = elements.autoEffective.checked;
+      if (elements.autoEffective.checked) computeEffectiveStack();
+    });
+
+    elements.heroStack.addEventListener("input", () => {
+      if (elements.heroStack.value !== "" && elements.villainStack.value !== "") computeEffectiveStack();
+    });
+    elements.villainStack.addEventListener("input", () => {
+      if (elements.heroStack.value !== "" && elements.villainStack.value !== "") computeEffectiveStack();
+    });
+
+    elements.matrix.addEventListener("click", event => {
+      const cell = event.target.closest("button[data-hand]");
+      if (!cell) return;
+      openHandSheet(cell.dataset.hand);
+    });
+
+    const modeSwitch = document.getElementById("study-mode");
+    const preflopWorkspace = document.getElementById("preflop-workspace");
+    const postflopWorkspace = document.getElementById("postflop-workspace");
+    const post = {
+      hand: document.getElementById("post-hand"),
+      handDisplay: document.getElementById("post-hand-display"),
+      game: document.getElementById("post-game"),
+      street: document.getElementById("post-street"),
+      potType: document.getElementById("post-pot-type"),
+      players: document.getElementById("post-players"),
+      position: document.getElementById("post-position"),
+      stack: document.getElementById("post-stack"),
+      pot: document.getElementById("post-pot"),
+      bet: document.getElementById("post-bet"),
+      board: document.getElementById("post-board"),
+      action: document.getElementById("post-action"),
+      equity: document.getElementById("post-equity"),
+      nut: document.getElementById("post-nut"),
+      tendency: document.getElementById("post-tendency"),
+      title: document.getElementById("post-title"),
+      subtitle: document.getElementById("post-subtitle"),
+      spr: document.getElementById("post-spr"),
+      potOdds: document.getElementById("post-pot-odds"),
+      mdf: document.getElementById("post-mdf"),
+      headline: document.getElementById("post-headline"),
+      summary: document.getElementById("post-summary"),
+      decisions: document.getElementById("post-decisions"),
+      warning: document.getElementById("post-warning")
+    };
+
+    const POST_LABELS = {
+      street: { flop: "翻牌", turn: "转牌", river: "河牌" },
+      potType: { srp: "单加注底池", "3bet": "3Bet 底池", limped: "跛入底池" },
+      players: { "2": "单挑", "3": "三人", "4": "四人及以上" },
+      action: {
+        "checked-to": "对手过牌到我",
+        "first-oop": "OOP 首先行动",
+        "facing-bet": "面对下注",
+        "after-call": "上一街下注被跟注",
+        "after-checkraise": "上一街发生过牌加注"
+      }
+    };
+
+    function relationText(value, subject) {
+      if (value === "hero") return `我方拥有${subject}`;
+      if (value === "villain") return `对手拥有${subject}`;
+      return `双方${subject}接近`;
+    }
+
+    function makeDecisionStep(number, title, body, sources) {
+      const article = document.createElement("article");
+      article.className = "decision-step";
+
+      const badge = document.createElement("span");
+      badge.className = "step-number";
+      badge.textContent = number;
+
+      const content = document.createElement("div");
+      const heading = document.createElement("h3");
+      const paragraph = document.createElement("p");
+      const source = document.createElement("small");
+      source.className = "source-badge";
+      heading.textContent = title;
+      paragraph.textContent = body;
+      source.textContent = sources;
+      content.append(heading, paragraph, source);
+      article.append(badge, content);
+      return article;
+    }
+
+    function postflopAdvice() {
+      const selectedPostHand = post.hand.value || state.selectedHand;
+      const selectedPostMeta = handMeta(selectedPostHand);
+      const players = Number(post.players.value);
+      const stack = clamp(Number(post.stack.value) || 1, 1, 500);
+      const pot = Math.max(0.5, Number(post.pot.value) || 0.5);
+      const bet = Math.max(0, Number(post.bet.value) || 0);
+      const facingBet = post.action.value === "facing-bet" && bet > 0;
+      const heroNut = post.nut.value === "hero";
+      const villainNut = post.nut.value === "villain";
+      const heroEquity = post.equity.value === "hero";
+      const villainEquity = post.equity.value === "villain";
+      const oopLeadNode = post.position.value === "oop" && post.action.value === "first-oop";
+      const donkBoard = ["low-connected", "paired", "two-tone"].includes(post.board.value);
+
+      post.spr.textContent = (stack / pot).toFixed(1);
+      post.potOdds.textContent = facingBet ? `${(bet / (pot + bet * 2) * 100).toFixed(1)}%` : "—";
+      post.mdf.textContent = facingBet ? `${(pot / (pot + bet) * 100).toFixed(1)}%` : "—";
+
+      let headline;
+      let summary;
+      if (facingBet) {
+        headline = "先定防守范围，再挑跟注与加注组合";
+        summary = "底池赔率和 MDF 是价格基线；范围关系、后续街与权益实现决定实际偏移。";
+      } else if (oopLeadNode && donkBoard && (heroNut || heroEquity) && stack <= 60) {
+        headline = "检查 donk，而不是自动过牌给前街进攻者";
+        summary = "短筹码降低位置劣势；若新牌让权益或坚果分布反超，反主动下注有逻辑基础。";
+      } else if (heroNut && heroEquity) {
+        headline = "比较小注与极化重注两种范围结构";
+        summary = "双重优势能支持主动进攻，但仍要说明价值端、诈唬端和对手会弃掉什么权益。";
+      } else if (villainNut && villainEquity) {
+        headline = "提高过牌与防守权重，避免强行争夺主动权";
+        summary = "当整体权益与坚果端都落后时，下注需要非常具体的组合和剥削理由。";
+      } else {
+        headline = "先选策略骨架，再决定具体组合";
+        summary = "优势分离或接近时，不要从单手牌强度直接跳到下注尺度。";
+      }
+
+      if (players > 2) {
+        headline = "多人底池先收紧价值与诈唬边界";
+        summary = "单挑频率不能直接复制；后位玩家、相对坚果和权益实现都要重新评估。";
+      }
+
+      const rangeBody = `${relationText(post.equity.value, "总体权益优势")}；${relationText(post.nut.value, "坚果优势")}。每条新街都要重新判断，不能沿用翻前主动权。`;
+      let sizingBody;
+      if (players > 2) {
+        sizingBody = "多人池优先减少边缘诈唬和自动持续下注；大尺度需要更强的相对坚果与更清晰的后续计划。";
+      } else if (heroNut && heroEquity) {
+        sizingBody = "可比较高频小注与低频极化重注；重注必须能让对手的中等强度牌弃掉有价值权益。";
+      } else if (heroEquity && !heroNut) {
+        sizingBody = "有总体权益但缺少坚果端时，更偏向小/中尺度或保留过牌，避免把范围过度极化。";
+      } else if (villainNut || villainEquity) {
+        sizingBody = "对手占优时提高过牌权重；下注应有明确的拒绝权益或剥削目标。";
+      } else {
+        sizingBody = "优势接近时先保留强过牌范围，再比较单尺度与分尺度是否真的解决了范围问题。";
+      }
+
+      const priceBody = facingBet
+        ? `面对 ${bet}BB 下注：直接权益阈值 ${post.potOdds.textContent}，简化 MDF ${post.mdf.textContent}。这两个数都未计后续街、范围差异和反向隐含赔率。`
+        : "当前不是面对下注节点，因此不显示 MDF。先确定下注/过牌范围结构，再在对手回应后计算价格。";
+
+      let comboBody = "最后才看阻挡：价值下注要有更差牌能跟；诈唬要能打掉更好牌；抓诈倾向阻挡价值并放行对手自然诈唬。";
+      const handType = selectedPostMeta.pair ? "口袋对子" : selectedPostMeta.suited ? "同花手牌" : "非同花手牌";
+      comboBody += ` 当前选择 ${selectedPostHand}（${handType}）；翻后精确阻挡判断还需要具体花色和完整公共牌。`;
+      if (post.street.value === "river") comboBody += " 河牌范围更紧、更极化，阻挡效应通常比翻牌更重要。";
+      if (post.potType.value === "3bet") comboBody += " 3Bet 底池范围更紧，具体花色与关键高张更值得核对。";
+
+      const exploitMap = {
+        unknown: "没有可靠偏离证据：保留基线，不按玩家标签猜策略。",
+        overfold: "对手过度弃牌：增加能代表价值、且阻挡继续范围的诈唬；不要降低价值下注质量。",
+        overcall: "对手过度跟注：扩大薄价值、减少零权益诈唬，并按其继续范围重新选择尺度。",
+        underbluff: "对手诈唬不足：收紧纯抓诈；强价值范围仍按其更差跟注范围处理。",
+        overbluff: "对手诈唬过多：放宽合适抓诈并减少把中等摊牌价值牌转诈的需求。",
+        passive: "对手过牌过多：更多主动兑现价值与拒绝权益，但先确认其过牌范围是否仍受保护。"
+      };
+
+      const steps = [
+        ["范围关系", rangeBody, "S007 · S012 · S023"],
+        ["频率与尺度", sizingBody, players > 2 ? "S016 · S028" : "S026 · S029 · S036"],
+        ["价格与防守", priceBody, "S020 · S033 · S062"],
+        ["组合选择", comboBody, "S005 · S011 · S061 · S085"],
+        ["剥削调整", exploitMap[post.tendency.value], "S006 · S038 · S059 · S063"]
+      ];
+
+      if (post.game.value === "tournament") {
+        steps.push(["ICM 独立层", "当前仅提示 ICM 风险，不计算奖金 EV。需要剩余玩家筹码、奖励结构和风险溢价后才能调整 chip-EV 基线。", "S008 · S039 · S046 · S056"]);
+        post.warning.textContent = "锦标赛模式未运行 ICM Solver。这里的 SPR、底池赔率和 MDF 仍是 chip-EV 数学项，不能代表奖金 EV 最优策略。";
+      } else {
+        post.warning.textContent = "这里输出的是来源支持的学习框架，不是精确 Solver 解。需要频率时必须补齐完整范围、抽水、下注树和有效筹码。";
+      }
+
+      post.headline.textContent = headline;
+      post.summary.textContent = summary;
+      post.handDisplay.textContent = selectedPostHand;
+      post.decisions.replaceChildren(...steps.map((step, index) => makeDecisionStep(String(index + 1), ...step)));
+      post.title.textContent = `${POST_LABELS.street[post.street.value]} · ${POST_LABELS.potType[post.potType.value]} · ${POST_LABELS.players[post.players.value]}`;
+      post.subtitle.textContent = `${stack}BB · ${POST_LABELS.action[post.action.value]} · 课程框架`;
+    }
+
+    function activateMode(mode) {
+      const postflop = mode === "postflop";
+      preflopWorkspace.hidden = postflop;
+      postflopWorkspace.hidden = !postflop;
+      modeSwitch.querySelectorAll("button[data-mode]").forEach(item => {
+        item.setAttribute("aria-pressed", String(item.dataset.mode === mode));
+      });
+      if (postflop) postflopAdvice();
+    }
+
+    function sendSelectedHandToPostflop() {
+      post.hand.value = state.selectedHand;
+      post.game.value = state.gameType;
+      post.stack.value = state.inputStack;
+      if (elements.handSheet.open) elements.handSheet.close();
+      activateMode("postflop");
+    }
+
+    modeSwitch.addEventListener("click", event => {
+      const button = event.target.closest("button[data-mode]");
+      if (!button) return;
+      activateMode(button.dataset.mode);
+    });
+
+    elements.handPicker.addEventListener("change", () => selectHand(elements.handPicker.value));
+    elements.openPickedHand.addEventListener("click", () => openHandSheet(elements.handPicker.value));
+    elements.openHandTable.addEventListener("click", () => openHandSheet());
+    elements.sendHandPostflop.addEventListener("click", sendSelectedHandToPostflop);
+    elements.sheetSendPostflop.addEventListener("click", sendSelectedHandToPostflop);
+    elements.closeHandSheet.addEventListener("click", () => elements.handSheet.close());
+    elements.sheetCloseAction.addEventListener("click", () => elements.handSheet.close());
+    elements.handStrategyBody.addEventListener("click", event => {
+      const button = event.target.closest("button[data-depth]");
+      if (!button) return;
+      updateStack(button.dataset.depth);
+      renderHandSheet();
+    });
+
+    post.hand.addEventListener("change", () => {
+      selectHand(post.hand.value);
+    });
+
+    Object.values(post).forEach(element => {
+      if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) {
+        element.addEventListener("input", postflopAdvice);
+        element.addEventListener("change", postflopAdvice);
+      }
+    });
+
+    const startingHands = allStartingHands();
+    elements.handPicker.replaceChildren(...startingHands.map(handOption));
+    post.hand.replaceChildren(...startingHands.map(handOption));
+    elements.handPicker.value = state.selectedHand;
+    post.hand.value = state.selectedHand;
+    updatePositions();
+    updateStack(100);
+    postflopAdvice();
+  </script>
+</body>
+</html>
