@@ -14,15 +14,24 @@
   // knowledge/concepts/核心概念.md and knowledge/topics/翻后决策框架.md.
   // These are teaching heuristics, not a claim of exact Solver output.
   const KNOWLEDGE_BUNDLE = window.PokerKnowledgeBase;
+  const KNOWLEDGE_RULE_DOCUMENTS = KNOWLEDGE_BUNDLE?.rules?.ruleDocuments || {};
   const KNOWLEDGE_POLICY = {
     sources: "核心概念 · 翻后决策框架 · 一手牌讲解集合摘要",
     sequence: "还原节点 → 比较范围 → 计算价格 → 构造价值/诈唬 → 检查阻挡牌",
     multiwayAggressionFactor: 0.72,
+    multiwayFoldFactor: 1.12,
     pairedBoardAggressionFactor: 0.86,
     monotoneBoardAggressionFactor: 0.88,
+    lowConnectedAggressionFactor: 0.82,
     blockerBluffFactor: 1.12,
     expensiveCallFactor: 0.72,
     cheapCallFactor: 1.12,
+    highSprOopAggressionFactor: 0.78,
+    highSprOopCallFactor: 0.9,
+    lowSprStrongAggressionFactor: 1.16,
+    inPositionDrawAggressionFactor: 1.1,
+    preflopInPositionContinueFactor: 1.08,
+    preflopLargeRaiseContinueFactor: 0.82,
     ...(KNOWLEDGE_BUNDLE?.rules?.strategy || {}),
     sequence: KNOWLEDGE_BUNDLE?.rules?.sequence?.join(" → ") || "还原节点 → 比较范围 → 计算价格 → 构造价值/诈唬 → 检查阻挡牌",
     sources: KNOWLEDGE_BUNDLE?.rules?.sourceDocuments?.join(" · ") || "核心概念 · 翻后决策框架 · 一手牌讲解集合摘要"
@@ -380,54 +389,114 @@
     const ranks = gameState.board.reduce((counts, card) => ({ ...counts, [card[0]]: (counts[card[0]] || 0) + 1 }), {});
     const maxSuit = gameState.board.length ? Math.max(...Object.values(suits)) : 0;
     const pairedBoard = Object.values(ranks).some(count => count >= 2);
+    const boardValues = [...new Set(gameState.board.map(card => rankValue(card[0])))].sort((a, b) => a - b);
+    const connectedBoard = boardValues.length >= 3 && boardValues.at(-1) - boardValues[0] <= 5;
+    const highCardDry = gameState.board.length >= 3 && boardValues.at(-1) >= 12 && !pairedBoard && maxSuit <= 2 && !connectedBoard;
+    const lowConnected = gameState.board.length >= 3 && boardValues.at(-1) <= 11 && connectedBoard;
     const pot = totalPot(gameState);
     const potOdds = toCall > 0 ? toCall / Math.max(1, pot + toCall) : 0;
+    const spr = gameState.street === "PREFLOP" ? null : player.stack / Math.max(1, pot);
+    const positionOrder = { SB: 0, BB: 1, UTG: 2, HJ: 3, CO: 4, BTN: 5 };
+    const activeSeats = gameState.players
+      .filter(item => item && item.status !== "FOLDED" && item.status !== "BUSTED")
+      .map(item => item.seat);
+    const inPosition = activeSeats.every(activeSeat => activeSeat === seat
+      || positionOrder[positionForSeat(seat, gameState)] >= positionOrder[positionForSeat(activeSeat, gameState)]);
     const blockerSuit = gameState.board.length && maxSuit >= 2
       ? Object.entries(suits).find(([, count]) => count === maxSuit)?.[0]
       : null;
     const blocksFlush = Boolean(blockerSuit && player.hand.some(card => card[1] === blockerSuit));
     return {
       activePlayers,
-      multiway: activePlayers >= 3,
+      multiway: gameState.street !== "PREFLOP" && activePlayers >= 3,
       pairedBoard,
       monotonePressure: maxSuit >= 3,
+      highCardDry,
+      lowConnected,
       blocksFlush,
       potOdds,
+      spr,
+      inPosition,
+      raiseInBb: currentBet(gameState) / Math.max(1, gameState.bigBlind),
       position: positionForSeat(seat, gameState)
     };
   }
 
-  function applyKnowledgePolicy(weights, signals, street, facingBet, draw) {
+  function applyKnowledgePolicy(weights, signals, street, facingBet, profile) {
     const adjusted = { ...weights };
     const notes = [];
+    const ruleKeys = new Set();
+    let sizing = { small: 0.56, large: 0.36, allin: 0.08 };
     if (signals.multiway) {
       if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.multiwayAggressionFactor;
-      if (adjusted.fold) adjusted.fold *= 1.12;
+      if (adjusted.fold) adjusted.fold *= KNOWLEDGE_POLICY.multiwayFoldFactor;
+      sizing = { small: 0.62, large: 0.32, allin: 0.06 };
+      ruleKeys.add("multiway");
       notes.push(`多人池 ${signals.activePlayers} 人：减少边缘诈唬，收紧薄价值`);
     }
     if (street !== "PREFLOP" && signals.pairedBoard) {
       if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.pairedBoardAggressionFactor;
+      ruleKeys.add("boardTexture");
       notes.push("公共牌成对：重注范围需要更明确的坚果与极化依据");
     }
     if (street !== "PREFLOP" && signals.monotonePressure) {
       if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.monotoneBoardAggressionFactor;
+      ruleKeys.add("boardTexture");
       notes.push("同花压力：减少无阻挡的边缘进攻");
     }
+    if (street !== "PREFLOP" && signals.lowConnected) {
+      if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.lowConnectedAggressionFactor;
+      if (profile.strength >= 4 || profile.draw) sizing = { small: 0.38, large: 0.5, allin: 0.12 };
+      ruleKeys.add("boardTexture");
+      ruleKeys.add("sizing");
+      notes.push("低张连接面：降低自动进攻，强价值与强听牌采用更极化的尺度");
+    } else if (street !== "PREFLOP" && signals.highCardDry) {
+      sizing = { small: 0.72, large: 0.24, allin: 0.04 };
+      ruleKeys.add("boardTexture");
+      ruleKeys.add("sizing");
+      notes.push("高牌干燥面：保留更宽的小尺度范围，不把牌面优势自动等同于重注");
+    }
     if (facingBet && adjusted.call) {
-      if (signals.potOdds >= 0.32) {
+      if (signals.potOdds <= 0.2) {
         adjusted.call *= KNOWLEDGE_POLICY.cheapCallFactor;
         notes.push(`价格约 ${Math.round(signals.potOdds * 100)}%：提高有权益继续牌的跟注权重`);
-      } else if (signals.potOdds >= 0.2) {
+      } else if (signals.potOdds >= 0.32) {
         adjusted.call *= KNOWLEDGE_POLICY.expensiveCallFactor;
         notes.push(`价格约 ${Math.round(signals.potOdds * 100)}%：收紧没有足够权益实现的跟注`);
       }
+      ruleKeys.add("price");
     }
-    if (street !== "PREFLOP" && draw && signals.blocksFlush && adjusted.aggressive) {
+    if (street !== "PREFLOP" && profile.draw && signals.blocksFlush && adjusted.aggressive) {
       adjusted.aggressive *= KNOWLEDGE_POLICY.blockerBluffFactor;
+      ruleKeys.add("blockers");
       notes.push("手牌阻挡同花组合：保留少量更合适的半诈唬/施压组合");
     }
+    if (street !== "PREFLOP" && signals.spr >= 6 && !signals.inPosition && profile.strength <= 3) {
+      if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.highSprOopAggressionFactor;
+      if (adjusted.call) adjusted.call *= KNOWLEDGE_POLICY.highSprOopCallFactor;
+      ruleKeys.add("sprPosition");
+      notes.push(`高 SPR ${signals.spr.toFixed(1)} 且无位置：中等牌减少构建大底池，保留过牌保护`);
+    } else if (street !== "PREFLOP" && signals.spr <= 2.5 && profile.strength >= 3) {
+      if (adjusted.aggressive) adjusted.aggressive *= KNOWLEDGE_POLICY.lowSprStrongAggressionFactor;
+      if (adjusted.fold) adjusted.fold *= 0.8;
+      sizing = { small: 0.32, large: 0.4, allin: 0.28 };
+      ruleKeys.add("sprPosition");
+      ruleKeys.add("sizing");
+      notes.push(`低 SPR ${signals.spr.toFixed(1)}：强一对以上更容易实现价值并进入打光线路`);
+    }
+    if (street !== "PREFLOP" && signals.inPosition && profile.draw && adjusted.aggressive) {
+      adjusted.aggressive *= KNOWLEDGE_POLICY.inPositionDrawAggressionFactor;
+      ruleKeys.add("sprPosition");
+      notes.push("有位置且持有听牌：保留主动施压，也可利用位置延后兑现权益");
+    }
+    if (street === "PREFLOP" && facingBet) {
+      if (signals.inPosition && adjusted.call) adjusted.call *= KNOWLEDGE_POLICY.preflopInPositionContinueFactor;
+      if (signals.raiseInBb >= 8 && adjusted.call) adjusted.call *= KNOWLEDGE_POLICY.preflopLargeRaiseContinueFactor;
+      ruleKeys.add("preflop");
+      notes.push(`${signals.position} 面对 ${signals.raiseInBb.toFixed(1)}BB 压力：按位置、尺度和权益实现调整继续范围`);
+    }
     if (!notes.length) notes.push("按节点、价格和范围结构维持基础混合");
-    return { weights: adjusted, notes };
+    return { weights: adjusted, notes, ruleKeys: [...ruleKeys], sizing };
   }
 
   function normalizeGroupWeights(weights, candidates) {
@@ -492,17 +561,31 @@
       }
     }
 
-    const policy = applyKnowledgePolicy(weights, signals, gameState.street, facingBet, draw);
+    const policy = applyKnowledgePolicy(weights, signals, gameState.street, facingBet, {
+      draw,
+      strength: gameState.street === "PREFLOP" ? 0 : postflopProfile(seat).strength
+    });
     weights = policy.weights;
     const queryTerms = [
       signals.multiway && "多人底池",
       signals.pairedBoard && "成对牌面",
       signals.monotonePressure && "同花",
+      signals.highCardDry && "高牌干燥面",
+      signals.lowConnected && "低张连接面",
       facingBet && "底池赔率",
+      signals.spr !== null && "SPR 位置",
       signals.blocksFlush && "阻挡",
       gameState.street === "PREFLOP" ? "翻前范围" : "范围优势 坚果优势 下注尺度"
     ].filter(Boolean);
-    const knowledgeMatches = KNOWLEDGE_BUNDLE?.search?.(queryTerms, 3) || [];
+    const ruleMatches = policy.ruleKeys
+      .flatMap(key => KNOWLEDGE_RULE_DOCUMENTS[key] || [])
+      .map(id => KNOWLEDGE_BUNDLE?.get?.(id))
+      .filter(Boolean)
+      .map(doc => ({ id: doc.id, title: doc.title, path: doc.path, section: doc.section, excerpt: doc.content.slice(0, 260) }));
+    const searchedMatches = KNOWLEDGE_BUNDLE?.search?.(queryTerms, 3) || [];
+    const knowledgeMatches = [...ruleMatches, ...searchedMatches]
+      .filter((item, index, list) => list.findIndex(candidate => candidate.id === item.id) === index)
+      .slice(0, 3);
     const knowledgeSummary = `${policy.notes.join("；")}。依据：${KNOWLEDGE_POLICY.sequence}。`;
     const groupWeights = normalizeGroupWeights(weights, candidates);
     const entries = [];
@@ -512,7 +595,7 @@
         groupCandidates.forEach(item => entries.push({ ...item, frequency: groupFrequency / groupCandidates.length }));
         return;
       }
-      const allocations = groupCandidates.map(item => item.size === "small" ? 0.56 : item.size === "large" ? 0.36 : 0.08);
+      const allocations = groupCandidates.map(item => policy.sizing[item.size] || 0.08);
       const allocationTotal = allocations.reduce((sum, value) => sum + value, 0);
       groupCandidates.forEach((item, index) => entries.push({
         ...item,
