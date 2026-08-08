@@ -36,6 +36,30 @@
     sequence: KNOWLEDGE_BUNDLE?.rules?.sequence?.join(" → ") || "还原节点 → 比较范围 → 计算价格 → 构造价值/诈唬 → 检查阻挡牌",
     sources: KNOWLEDGE_BUNDLE?.rules?.sourceDocuments?.join(" · ") || "核心概念 · 翻后决策框架 · 一手牌讲解集合摘要"
   };
+  const KNOWLEDGE_CASE_DOCUMENT_ID = "cases-实战牌例卡片-md";
+  const KNOWLEDGE_CASES = (() => {
+    const document = KNOWLEDGE_BUNDLE?.get?.(KNOWLEDGE_CASE_DOCUMENT_ID);
+    if (!document?.content) return [];
+    const headings = [...document.content.matchAll(/^###\s+(S\d+)：(.+)$/gm)];
+    return headings.map((match, index) => {
+      const start = match.index + match[0].length;
+      const end = headings[index + 1]?.index ?? document.content.length;
+      const body = document.content.slice(start, end).trim();
+      const node = body.match(/- 关键节点：(.+)/)?.[1]?.trim() || "";
+      const lesson = body.match(/- 可复用结论：(.+)/)?.[1]?.trim() || "";
+      return {
+        id: document.id,
+        caseId: match[1],
+        caseTitle: match[2].trim(),
+        title: `${match[1]} · ${match[2].trim()}`,
+        path: document.path,
+        section: "cases",
+        node,
+        lesson,
+        content: `${match[2]} ${node} ${lesson}`
+      };
+    });
+  })();
   const TABLE_PLAYERS = [
     { id: HERO_ID, name: "你" },
     { id: "bot-mina", name: "Mina" },
@@ -360,8 +384,7 @@
     return false;
   }
 
-  function postflopProfile(seat) {
-    const gameState = state.engine.state;
+  function postflopProfile(seat, gameState = state.engine.state) {
     const cards = [...gameState.players[seat].hand, ...gameState.board];
     const hand = window.PokerSolver.Hand.solve(cards);
     const baseStrength = {
@@ -420,6 +443,105 @@
       raiseInBb: currentBet(gameState) / Math.max(1, gameState.bigBlind),
       position: positionForSeat(seat, gameState)
     };
+  }
+
+  function recentActionLine() {
+    return state.timeline.slice(-8).map(step => step.note).join("；");
+  }
+
+  function pairPositionLabel(cards, board) {
+    if (!board.length) return "";
+    const holeValues = cards.map(card => rankValue(card[0]));
+    const boardValues = [...new Set(board.map(card => rankValue(card[0])))].sort((a, b) => b - a);
+    if (holeValues[0] === holeValues[1]) {
+      const pairValue = holeValues[0];
+      if (pairValue > boardValues[0]) return "超对";
+      const higher = boardValues.filter(value => value > pairValue);
+      return higher.length === 1 ? "牌面第二对" : higher.length === 2 ? "牌面第三对" : "口袋小对子";
+    }
+    const matched = holeValues.find(value => boardValues.includes(value));
+    if (!matched) return "";
+    const position = boardValues.indexOf(matched);
+    return position === 0 ? "顶对" : position === 1 ? "中对" : "底对";
+  }
+
+  function handCaseTerms(gameState, seat, profile, signals, facingBet) {
+    const player = gameState.players[seat];
+    const terms = [STREET_LABELS[gameState.street], positionForSeat(seat, gameState)];
+    const pairLabel = gameState.street === "PREFLOP" ? "" : pairPositionLabel(player.hand, gameState.board);
+    if (pairLabel) terms.push(pairLabel, pairLabel === "牌面第三对" ? "中对" : "");
+    const handTerms = {
+      "High Card": "高牌",
+      Pair: "一对",
+      "Two Pair": "两对",
+      "Three of a Kind": "三条",
+      Straight: "顺子",
+      Flush: "同花",
+      "Full House": "葫芦",
+      "Four of a Kind": "四条",
+      "Straight Flush": "同花顺"
+    };
+    if (profile?.hand?.name) terms.push(handTerms[profile.hand.name] || profile.hand.name);
+    if (profile?.flushDraw) terms.push("同花听牌", "听牌");
+    if (profile?.straightDraw) terms.push("顺子听牌", "听牌");
+    if (signals.multiway) terms.push("多人池", "三人池");
+    if (signals.pairedBoard) terms.push("成对牌面");
+    if (signals.monotonePressure) terms.push("同花完成", "同花");
+    if (signals.lowConnected) terms.push("低张连接面", "连接面");
+    if (signals.highCardDry) terms.push("高牌干燥面");
+    if (signals.spr !== null && signals.spr >= 6) terms.push("深筹码", "高 SPR");
+    if (signals.spr !== null && signals.spr <= 2.5) terms.push("低 SPR", "短筹码");
+    if (facingBet) terms.push("面对下注");
+    const line = recentActionLine();
+    if (/3Bet/i.test(line)) terms.push("3Bet 底池", "3Bet");
+    if (/全下/.test(line)) terms.push("全压", "全下");
+    if (/加注/.test(line)) terms.push("加注");
+    if (/跟注/.test(line)) terms.push("跟注");
+    if (/过牌/.test(line)) terms.push("过牌");
+    return [...new Set(terms.filter(Boolean))];
+  }
+
+  function matchKnowledgeCases(gameState, seat, profile, signals, facingBet, limit = 3) {
+    if (!KNOWLEDGE_CASES.length) return [];
+    const terms = handCaseTerms(gameState, seat, profile, signals, facingBet);
+    const street = STREET_LABELS[gameState.street];
+    const streetWords = ["翻牌", "转牌", "河牌"];
+    const semanticAnchor = /多人|3Bet|同花|顺子|顶对|中对|底对|超对|口袋小对子|两对|三条|成对牌面|低张连接面|高牌干燥面/;
+    const weighted = new Map(terms.map(term => [term, /多人|3Bet|全压|同花|顺子|顶对|中对|底对|超对|口袋小对子|两对|三条/.test(term) ? 4 : 2]));
+    return KNOWLEDGE_CASES.map(card => {
+      let score = 0;
+      let anchorHits = 0;
+      let semanticHits = 0;
+      const matchedTerms = [];
+      weighted.forEach((weight, term) => {
+        if (!card.content.includes(term)) return;
+        score += weight;
+        matchedTerms.push(term);
+        if (weight >= 4) anchorHits += 1;
+        if (semanticAnchor.test(term)) semanticHits += 1;
+      });
+      const mentionedStreets = streetWords.filter(word => card.content.includes(word));
+      if (gameState.street !== "PREFLOP" && mentionedStreets.length && !mentionedStreets.includes(street)) score -= 4;
+      if (card.node.includes("材料只") || card.lesson.includes("不能据此")) score -= 3;
+      if (profile?.strength <= 2 && /成坚果|顺子|同花|三条|两对/.test(card.caseTitle)) score -= 4;
+      return {
+        id: card.id,
+        caseId: card.caseId,
+        title: card.title,
+        path: card.path,
+        section: card.section,
+        node: card.node,
+        lesson: card.lesson,
+        score,
+        anchorHits,
+        semanticHits,
+        matchedTerms,
+        kind: "case",
+        excerpt: `关键节点：${card.node} 可迁移结论：${card.lesson}`
+      };
+    }).filter(item => item.score >= 9 && item.anchorHits >= 1 && item.semanticHits >= 1)
+      .sort((a, b) => b.score - a.score || a.caseId.localeCompare(b.caseId))
+      .slice(0, limit);
   }
 
   function applyKnowledgePolicy(weights, signals, street, facingBet, profile) {
@@ -518,6 +640,7 @@
     let weights;
     let reason;
     let draw = false;
+    let decisionProfile = null;
 
     if (gameState.street === "PREFLOP") {
       const details = preflopScore(player.hand);
@@ -539,7 +662,8 @@
         reason = `面对翻前加注，策略按牌力、位置、价格和再加注压力收紧继续范围。`;
       }
     } else {
-      const profile = postflopProfile(seat);
+      const profile = postflopProfile(seat, gameState);
+      decisionProfile = profile;
       draw = profile.flushDraw || profile.straightDraw;
       const odds = facingBet ? toCall / Math.max(1, totalPot(gameState) + toCall) : 0;
       if (facingBet) {
@@ -563,7 +687,7 @@
 
     const policy = applyKnowledgePolicy(weights, signals, gameState.street, facingBet, {
       draw,
-      strength: gameState.street === "PREFLOP" ? 0 : postflopProfile(seat).strength
+      strength: gameState.street === "PREFLOP" ? 0 : postflopProfile(seat, gameState).strength
     });
     weights = policy.weights;
     const queryTerms = [
@@ -583,9 +707,10 @@
       .filter(Boolean)
       .map(doc => ({ id: doc.id, title: doc.title, path: doc.path, section: doc.section, excerpt: doc.content.slice(0, 260) }));
     const searchedMatches = KNOWLEDGE_BUNDLE?.search?.(queryTerms, 3) || [];
-    const knowledgeMatches = [...ruleMatches, ...searchedMatches]
-      .filter((item, index, list) => list.findIndex(candidate => candidate.id === item.id) === index)
-      .slice(0, 3);
+    const caseMatches = matchKnowledgeCases(gameState, seat, decisionProfile, signals, facingBet, 3);
+    const knowledgeMatches = [...caseMatches, ...ruleMatches, ...searchedMatches]
+      .filter((item, index, list) => list.findIndex(candidate => (candidate.caseId || candidate.id) === (item.caseId || item.id)) === index)
+      .slice(0, 4);
     const knowledgeSummary = `${policy.notes.join("；")}。依据：${KNOWLEDGE_POLICY.sequence}。`;
     const groupWeights = normalizeGroupWeights(weights, candidates);
     const entries = [];
@@ -603,7 +728,7 @@
       }));
     });
     entries.sort((a, b) => b.frequency - a.frequency);
-    return { entries, reason, groupWeights, knowledgeSummary, knowledgeSignals: signals, knowledgeSources: KNOWLEDGE_POLICY.sources, knowledgeMatches };
+    return { entries, reason, groupWeights, knowledgeSummary, knowledgeSignals: signals, knowledgeSources: KNOWLEDGE_POLICY.sources, knowledgeMatches, caseMatches };
   }
 
   function chooseMixedAction(strategy) {
@@ -660,7 +785,7 @@
 
   function preflopHandLabel(cards) {
     const details = preflopScore(cards);
-    const ranks = cards.map(card => card[0]).join("");
+    const ranks = cards.map(card => card[0]).sort((a, b) => rankValue(b) - rankValue(a)).join("");
     const traits = [];
     if (details.pair) traits.push("口袋对子");
     else {
@@ -723,17 +848,24 @@
     if (gameState.street === "PREFLOP") {
       return `你拿 ${cards}（${preflopHandLabel(player.hand)}），${positionForSeat(HERO_SEAT, gameState)} 位面对当前前序行动`;
     }
-    const profile = postflopProfile(HERO_SEAT);
+    const profile = postflopProfile(HERO_SEAT, gameState);
     const board = gameState.board;
     const boardRanks = board.map(card => rankValue(card[0]));
     const holeRanks = player.hand.map(card => rankValue(card[0]));
     const topBoard = Math.max(...boardRanks);
-    let made = profile.hand.name;
+    const madeNames = {
+      "High Card": "高牌", Pair: "一对", "Two Pair": "两对", "Three of a Kind": "三条",
+      Straight: "顺子", Flush: "同花", "Full House": "葫芦", "Four of a Kind": "四条",
+      "Straight Flush": "同花顺"
+    };
+    let made = madeNames[profile.hand.name] || profile.hand.name;
     if (profile.hand.name === "Pair") {
-      if (holeRanks.includes(topBoard)) made = `顶对（${RANKS[topBoard - 2]}）`;
+      const pairLabel = pairPositionLabel(player.hand, board);
+      if (!pairLabel) made = `公共牌对子，手牌以 ${RANKS[Math.max(...holeRanks) - 2]} 高踢脚参与`;
+      else if (holeRanks.includes(topBoard)) made = `顶对（${RANKS[topBoard - 2]}）`;
       else if (holeRanks[0] === holeRanks[1] && holeRanks[0] > topBoard) made = "超对";
-      else if (holeRanks[0] === holeRanks[1]) made = "口袋对子碰到公共牌";
-      else made = "中/底对";
+      else if (holeRanks[0] === holeRanks[1]) made = `${pairLabel}（口袋 ${player.hand[0][0]}${player.hand[1][0]}）`;
+      else made = pairLabel;
     }
     const draws = [];
     if (profile.flushDraw) draws.push("同花听牌");
@@ -742,18 +874,224 @@
     return `你拿 ${cards}，公共牌 ${board.map(displayCard).join(" ")}；当前是${made}${drawText}。${boardFacts(board)}`;
   }
 
-  function coachPick(items, seed) {
-    const value = String(seed || "").split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
-    return items[value % items.length];
+  function hasMadeStraight(cards) {
+    const values = new Set(cards.map(card => rankValue(card[0])));
+    if (values.has(14)) values.add(1);
+    for (let start = 1; start <= 10; start += 1) {
+      let hits = 0;
+      for (let value = start; value < start + 5; value += 1) if (values.has(value)) hits += 1;
+      if (hits === 5) return true;
+    }
+    return false;
+  }
+
+  function straightDrawExamples(board, limit = 4, unpairedOnly = true) {
+    if (board.length >= 5) return [];
+    const results = [];
+    const boardRanks = new Set(board.map(card => card[0]));
+    for (let highIndex = RANKS.length - 1; highIndex >= 0; highIndex -= 1) {
+      for (let lowIndex = highIndex - 1; lowIndex >= 0; lowIndex -= 1) {
+        if (unpairedOnly && (boardRanks.has(RANKS[highIndex]) || boardRanks.has(RANKS[lowIndex]))) continue;
+        const cards = [`${RANKS[highIndex]}s`, `${RANKS[lowIndex]}h`, ...board];
+        if (straightDraw(cards) && !hasMadeStraight(cards)) results.push(`${RANKS[highIndex]}${RANKS[lowIndex]}`);
+      }
+    }
+    return results.slice(0, limit);
+  }
+
+  function flushDrawExamples(board, limit = 3) {
+    if (board.length >= 5) return [];
+    const suitCounts = board.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
+    const target = Object.entries(suitCounts).find(([, count]) => count === 2);
+    if (!target) return [];
+    const [suit] = target;
+    const boardRanks = new Set(board.map(card => card[0]));
+    const available = [...RANKS].reverse().filter(rank => !boardRanks.has(rank));
+    const results = [];
+    for (let high = 0; high < available.length; high += 1) {
+      for (let low = high + 1; low < available.length; low += 1) {
+        const cards = [`${available[high]}${suit}`, `${available[low]}${suit}`, ...board];
+        if (!hasMadeStraight(cards)) results.push(`${available[high]}${SUIT_SYMBOL[suit]}${available[low]}${SUIT_SYMBOL[suit]}`);
+      }
+    }
+    return results.slice(0, limit);
+  }
+
+  function lowerPocketExamples(value, board, limit = 3) {
+    const boardRanks = new Set(board.map(card => card[0]));
+    return RANKS.filter(rank => rankValue(rank) < value && !boardRanks.has(rank))
+      .reverse().slice(0, limit).map(rank => `${rank}${rank}`);
+  }
+
+  function sameHighExamples(highValue, lowValue, stronger = false, limit = 3) {
+    const values = RANKS.map(rank => rankValue(rank)).filter(value => stronger
+      ? value > lowValue && value < highValue
+      : value < lowValue && value >= 6);
+    values.sort((a, b) => stronger ? b - a : b - a);
+    return values.slice(0, limit).map(value => `${RANKS[highValue - 2]}${RANKS[value - 2]}`);
+  }
+
+  function higherPocketExamples(value, board) {
+    const boardRanks = new Set(board.map(card => card[0]));
+    const higher = RANKS.filter(rank => rankValue(rank) > value && !boardRanks.has(rank)).reverse();
+    return higher.length ? higher.map(rank => `${rank}${rank}`).join("、") : "";
+  }
+
+  function signalsTextForBoard(board) {
+    const suitCounts = board.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
+    const rankCounts = board.reduce((counts, card) => ({ ...counts, [card[0]]: (counts[card[0]] || 0) + 1 }), {});
+    const notes = [];
+    if (Math.max(...Object.values(suitCounts)) >= 3) notes.push("两张同花手牌构成的同花");
+    if (Object.values(rankCounts).some(count => count >= 2)) notes.push("命中公共牌点数的三条");
+    return notes.length ? `，以及${notes.join("、")}` : "";
+  }
+
+  function specificRangeComparison(gameState, recommended, facingBet = false) {
+    if (gameState.street === "PREFLOP") {
+      const cards = gameState.players[HERO_SEAT].hand;
+      const details = preflopScore(cards);
+      const worseHigh = sameHighExamples(details.high, details.low, false);
+      const betterHigh = sameHighExamples(details.high, details.low, true);
+      const dominated = worseHigh.length ? worseHigh.join("、") : "更差高张和非同花宽范围";
+      const dominating = betterHigh.length ? betterHigh.join("、") : "更强高张";
+      return {
+        relative: `翻前这手 ${cards.map(displayCard).join(" ")} 的价值来自绝对牌力、同花/连接属性和位置，不存在公共牌坚果比较。`,
+        ahead: `继续后通常领先 ${dominated}，但会被 ${dominating}、口袋大对子和更强同花高张压制。`,
+        worseContinue: `若再加注，可能继续的更差牌主要是 ${dominated}、中小对子和部分同花连接牌；具体数量取决于对手面对再加注是跟注还是 4Bet/fold。`,
+        betterFold: "更强高张和大对子通常不会弃牌；翻前诈唬收益主要来自让对手弃掉有不错权益的中小对子、同花高张与可玩组合。",
+        verdict: `因此当前近似策略把 ${recommended} 放在主频，而不是只按两张牌的牌面观感行动。`
+      };
+    }
+
+    const player = gameState.players[HERO_SEAT];
+    const profile = postflopProfile(HERO_SEAT, gameState);
+    const board = gameState.board;
+    const boardValues = [...new Set(board.map(card => rankValue(card[0])))].sort((a, b) => b - a);
+    const boardRanks = boardValues.map(value => RANKS[value - 2]);
+    const top = boardRanks[0];
+    const second = boardRanks[1] || top;
+    const bottom = boardRanks.at(-1);
+    const pairLabel = pairPositionLabel(player.hand, board);
+    const holeValues = player.hand.map(card => rankValue(card[0]));
+    const pocketPair = holeValues[0] === holeValues[1];
+    const draws = [...flushDrawExamples(board), ...straightDrawExamples(board)];
+    const drawText = draws.length ? [...new Set(draws)].slice(0, 6).join("、") : "可用听牌";
+    const setText = boardRanks.map(rank => `${rank}${rank}`).join("、");
+    let relative;
+    let ahead;
+    let worseContinue;
+    let betterFold;
+    let boardPair = false;
+    let pairedValueZone = [];
+    let flushValueZone = "";
+    let betterHighCards = [];
+
+    if (profile.strength >= 5) {
+      relative = `你已经是${postflopHandLabel(HERO_SEAT)}，位于当前牌面的强价值区，但仍要检查更高顺子、同花或葫芦是否存在。`;
+      ahead = `你明确领先两对、三条、顶对/超对以及 ${drawText} 这类强听牌。`;
+      worseContinue = `能支付的更差牌主要是两对、三条、超对/顶对和带额外听牌的组合；尺度越大，纯一对留下得越少。`;
+      betterFold = "比你更好的坚果组合通常不会弃牌，所以这里的下注目标是从更差成牌取值，不是逼更好牌弃牌。";
+    } else if (profile.strength >= 4) {
+      relative = `你是${postflopHandLabel(HERO_SEAT)}，高于普通一对，但落后已经完成的顺子、同花和更高两对/三条。`;
+      ahead = `你领先 ${top}x、超对、较弱两对以及 ${drawText} 等听牌。`;
+      worseContinue = `更差继续主要来自强 ${top}x、超对、较弱两对和强听牌；这是价值下注能成立的支付区。`;
+      betterFold = "顺子、同花、暗三条等更好牌很少弃牌；若这些组合密度高，重注会把你自己送进更强范围。";
+    } else if (profile.strength >= 3 || pairLabel === "顶对" || pairLabel === "超对") {
+      relative = `你是${pairLabel || postflopHandLabel(HERO_SEAT)}，属于中上段一对，但并非坚果：两对 ${top}${second}、暗三条 ${setText} 和已完成顺/同花都在你上方。`;
+      ahead = `你领先更差 ${top}x、${second}x、较小口袋对子以及 ${drawText} 等未完成听牌。`;
+      worseContinue = `小中尺度下，可能支付的更差牌是较差踢脚的 ${top}x、${second}x、部分口袋对子和强听牌。`;
+      betterFold = "两对、暗三条和更强成牌通常不弃；因此这是薄到中等价值问题，不是用一对把坚果区打掉。";
+    } else if (pocketPair) {
+      const pairValue = holeValues[0];
+      const lowerPairs = lowerPocketExamples(pairValue, board).join("、") || "更小口袋对子";
+      const higherBoardPairs = boardValues.filter(value => value > pairValue).map(value => `${RANKS[value - 2]}x`);
+      const lowerBoardPairs = boardValues.filter(value => value < pairValue).map(value => `${RANKS[value - 2]}x`);
+      const higherPocket = higherPocketExamples(pairValue, board);
+      relative = `你是${pairLabel}（口袋 ${player.hand[0][0]}${player.hand[1][0]}）。你落后 ${[...higherBoardPairs, higherPocket, `两对 ${top}${second}`, `暗三条 ${setText}`].filter(Boolean).join("、")}。`;
+      ahead = `你领先 ${[...lowerBoardPairs, lowerPairs, drawText].filter(Boolean).join("、")}；这些才是你的实际优势区。`;
+      worseContinue = higherBoardPairs.length >= 2
+        ? `若你主动下注，现实支付主要来自 ${drawText} 这类自然听牌；${lowerPairs} 虽然被你领先，但在多张高牌面上通常会弃，只可能在极小尺度下少量继续。`
+        : `若你主动下注，更差继续主要是 ${[...lowerBoardPairs, lowerPairs, drawText].filter(Boolean).join("、")}；纯空气不会支付。`;
+      betterFold = `比你更好的 ${[...higherBoardPairs, higherPocket].filter(Boolean).join("、")} 在小中尺度下通常不会稳定弃牌；两对和暗三条更不会弃。`;
+    } else if (profile.hand.name === "Pair" && pairLabel) {
+      const pairValue = pocketPair ? holeValues[0] : Math.max(...holeValues.filter(value => boardValues.includes(value)));
+      const lowerPairs = lowerPocketExamples(pairValue, board).join("、") || `${bottom}x`;
+      relative = `你当前是${pairLabel || "较弱一对"}。在 ${boardRanks.join("-")} 上，你落后 ${top}x、${second}x、JJ+、两对 ${top}${second} 和暗三条 ${setText}。`;
+      ahead = `你主要领先 ${lowerPairs}、未成对高张，以及 ${drawText} 这类尚未完成的听牌。`;
+      worseContinue = `若用小注，真正可能用更差牌继续的是 ${lowerPairs}、${bottom}x 和 ${drawText} 等强听牌；纯空气通常直接弃牌，不能贡献价值。`;
+      betterFold = `对合理小中尺度，${top}x、${second}x、JJ+ 通常不会稳定弃牌。可能被较大尺度逼弃的更好牌主要是弱 ${second}x 或脆弱小对子，但需要你的线路能代表两对、暗三条或强顺子。`;
+    } else {
+      const boardRankCounts = board.reduce((counts, card) => ({ ...counts, [card[0]]: (counts[card[0]] || 0) + 1 }), {});
+      const pairedRank = Object.entries(boardRankCounts).find(([, count]) => count >= 2)?.[0] || "";
+      boardPair = Boolean(pairedRank);
+      const heroHigh = Math.max(...holeValues);
+      const heroHighRank = RANKS[heroHigh - 2];
+      const unpairedBoardRanks = [...new Set(board.map(card => card[0]))].filter(rank => rank !== pairedRank);
+      const boardSuitCounts = board.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
+      flushValueZone = Math.max(...Object.values(boardSuitCounts)) >= 3 ? "，以及已完成同花" : "";
+      pairedValueZone = [
+        ...unpairedBoardRanks.map(rank => `${rank}x（两对）`),
+        pairedRank && `${pairedRank}x（三条）`,
+        "口袋对子（两对或更好）"
+      ].filter(Boolean);
+      betterHighCards = [...RANKS].reverse()
+        .filter(rank => rankValue(rank) > heroHigh && !boardRankCounts[rank])
+        .slice(0, 4)
+        .map(rank => `${rank}-high`);
+      relative = boardPair
+        ? `公共牌本身已经成对，但你的两张手牌没有配对；你实际依靠 ${heroHighRank} 高踢脚。${pairedValueZone.join("、")} 都明确领先你${flushValueZone}。`
+        : `你目前是${postflopHandLabel(HERO_SEAT)}，没有稳定摊牌价值；牌面上的 ${top}x、${second}x、口袋对子和两对/暗三条都领先你。`;
+      ahead = gameState.street === "RIVER"
+        ? "你只领先更低高牌以及没有成牌的破产听牌；面对大额下注时，这部分组合必须真实存在，跟注才有依据。"
+        : "你只领先更差高牌和部分更弱听牌；如果没有听牌，过牌后的摊牌价值很有限。";
+      worseContinue = gameState.street === "RIVER"
+        ? "比你更差的牌已经没有继续取值空间；若你主动下注，它们大多直接弃牌，因此下注只能作为诈唬。"
+        : `比你更差的高牌和空气通常不会跟注，因此下注不是为了价值；${drawText} 即使尚未成牌，也可能已经凭高牌领先你，不能误算成“更差支付”。`;
+      betterFold = boardPair
+        ? `可争取逼弃的是 ${betterHighCards.join("、") || "更高但未成对的高牌"}；${pairedValueZone.join("、")} 不是现实弃牌目标。`
+        : `可争取逼弃的是未带强听牌的小对子、弱 ${second}x 和部分 A-high；${top}x、两对、暗三条通常不是现实弃牌目标。`;
+    }
+    if (facingBet) {
+      const missedDraws = gameState.street === "RIVER"
+        ? "破产顺子听牌、没有形成同花的单花阻挡牌，以及没有摊牌价值的高张"
+        : `${drawText} 等听牌、较低对子和部分宽范围高张`;
+      if (profile.strength <= 2 && !pairLabel && !pocketPair) {
+        worseContinue = `你能击败的下注主要是 ${missedDraws}；如果对手的行动线没有这些自然诈唬，你就没有足够抓诈对象。`;
+        betterFold = boardPair
+          ? `你落后的价值区包括 ${pairedValueZone.join("、")}${flushValueZone}。此外 ${betterHighCards.join("、") || "更高未成对高牌"} 也领先你，但它们只有主动转诈才会形成下注。`
+          : `你落后的价值区包括 ${top}x、${second}x、口袋对子、两对/暗三条${signalsTextForBoard(board)}。这些牌在大尺度下注中占比越高，弃牌越明确。`;
+      } else if (pocketPair) {
+        const pairValue = holeValues[0];
+        const higherBoardPairs = boardValues.filter(value => value > pairValue).map(value => `${RANKS[value - 2]}x`);
+        const lowerBoardPairs = boardValues.filter(value => value < pairValue).map(value => `${RANKS[value - 2]}x`);
+        const lowerPairs = lowerPocketExamples(pairValue, board).join("、") || "更小口袋对子";
+        worseContinue = higherBoardPairs.length >= 2
+          ? `你能击败的自然下注主要是 ${missedDraws}；${lowerPairs} 必须主动转成诈唬才会下注，不能默认把这些摊牌牌力全部计入对手诈唬。`
+          : `你能击败的下注主要来自 ${[...lowerBoardPairs, lowerPairs, missedDraws].filter(Boolean).join("、")}；这些组合的实际诈唬频率决定跟注价值。`;
+        betterFold = `你落后的价值区包括 ${[...higherBoardPairs, higherPocketExamples(pairValue, board), `两对 ${top}${second}`, `暗三条 ${setText}`].filter(Boolean).join("、")}；这些是不能被误算成诈唬的具体组合。`;
+      } else {
+        worseContinue = `你能击败的下注包括更差一对、较低口袋对子和 ${missedDraws}；这些是跟注获得收益的具体来源。`;
+        betterFold = `你落后的价值区包括两对、暗三条 ${setText}、已完成顺子/同花和更高一对；加注只有在这些牌会弃掉时才可能优于跟注。`;
+      }
+    }
+    return {
+      relative,
+      ahead,
+      worseContinue,
+      betterFold,
+      worseLabel: facingBet ? "能击败的下注" : "更差会继续",
+      betterLabel: facingBet ? "落后的价值牌" : "更好会弃牌",
+      verdict: `把这些具体组合放回策略后，当前主频是 ${recommended}；如果列不出支付、弃牌或诈唬组合，就不应把低频动作当成默认线路。`
+    };
   }
 
   function coachReview(decisionContext) {
     const {
-      street, position, candidate, strategy, gameState, pot, toCall, price, chosenFrequency, topFrequency, handFacts
+      street, position, candidate, strategy, gameState, pot, toCall, price, chosenFrequency, topFrequency, handFacts, specific
     } = decisionContext;
     const signals = strategy.knowledgeSignals || {};
     const facingBet = toCall > 0;
-    const profile = street === "PREFLOP" ? null : postflopProfile(HERO_SEAT);
+    const profile = street === "PREFLOP" ? null : postflopProfile(HERO_SEAT, gameState);
     const boardWords = [];
     if (signals.multiway) boardWords.push("多人池的范围密度");
     if (signals.pairedBoard) boardWords.push("成对牌面的坚果分布");
@@ -769,54 +1107,46 @@
     const recommended = strategy.entries[0]?.label || "主频行动";
     const frequency = chosenFrequency;
     const seed = `${street}-${position}-${chosen}-${signals.pairedBoard}-${signals.potOdds}`;
+    const caseMatch = strategy.caseMatches?.[0] || null;
+    const casePrefix = caseMatch
+      ? `知识库最相似牌例是 ${caseMatch.title}。匹配点包括 ${caseMatch.matchedTerms.slice(0, 4).join("、")}；其中的关键节点是“${caseMatch.node}”，可迁移结论是“${caseMatch.lesson}”。它是相似节点参考，不代表两手牌完全相同。`
+      : "知识库没有找到相似度足够高的完整牌例，因此本节点回到结构化范围与牌面规则，不强行套用单手结论。";
     let lead;
     const factLead = `${handFacts}。`;
     if (decisionContext.tone === "good") {
-      lead = coachPick([
-        `${factLead}在这个具体牌面上，${chosen} 正好回应了${primary}。`,
-        `${factLead}先把这组牌和这张公共牌还原清楚，再看${primary}；因此 ${chosen} 是自然的主线。`,
-        `${factLead}${chosen} 不是抽象术语，而是对当前牌面与行动线的具体回应。`
-      ], seed);
+      lead = `${casePrefix}${factLead}${specific.verdict} 你选择 ${chosen}，与这条主线一致。`;
     } else if (decisionContext.tone === "mixed") {
-      lead = coachPick([
-        `${factLead}${chosen} 不是错误，但它是围绕${primary}的低频分支；默认仍让 ${recommended} 承担更多频率。`,
-        `${factLead}这手牌可以保留 ${chosen}，但要说清楚这张牌如何服务于${primary}，否则回到 ${recommended}。`,
-        `${factLead}方向没有完全偏离，但频率要收回来：${chosen} 约占 ${frequency}%，不能把这条混合线当成常规动作。`
-      ], seed);
+      lead = `${casePrefix}${factLead}${specific.verdict} 你的 ${chosen} 可以保留，但仅约 ${frequency}%，默认仍应优先 ${recommended}。`;
     } else {
-      lead = coachPick([
-        `${factLead}真正需要纠正的是：这组牌在这个牌面上没有先处理${primary}，所以 ${chosen} 缺少范围支撑。`,
-        `${factLead}你先按牌力直觉选了 ${chosen}，但这张公共牌改变了${primary}；应该先还原牌面，再决定动作。`,
-        `${factLead}${chosen} 只占当前策略的 ${frequency}%；问题不是记忆术语，而是没有先解释这张牌在当前牌面的作用。`
-      ], seed);
+      lead = `${casePrefix}${factLead}${specific.verdict} 你选择 ${chosen} 只有约 ${frequency}%，主要问题是它没有足够的支付牌或弃牌目标支撑。`;
     }
 
-    const reasonParts = [];
-    if (street === "PREFLOP") {
-      reasonParts.push(`${handFacts} 翻前再看 ${position}、前序加注尺寸和后方未行动玩家，决定范围是线性继续还是极化再加注。`);
-    } else {
-      reasonParts.push(`${handFacts} 翻后不能沿用翻前主动权；要重新比较这组牌在当前公共牌上的成牌、听牌和相对坚果位置。`);
-    }
+    const reasonParts = [specific.relative, specific.ahead];
     if (facingBet) {
-      reasonParts.push(`你需要补 ${formatBb(toCall)}，简化盈亏平衡权益约 ${Math.round(price * 100)}%；价格只是防守起点，还要问这手牌能否实现权益。`);
+      reasonParts.push(`你需要补 ${formatBb(toCall)}，简化盈亏平衡权益约 ${Math.round(price * 100)}%；继续范围要由“能击败的诈唬/听牌”与“落后的价值牌”共同决定。`);
     } else {
-      reasonParts.push("当前没有下注，主动下注必须同时回答“哪些更差牌会继续”和“哪些更好牌会弃牌”两个问题。");
+      reasonParts.push("当前没有下注，因此下注是否成立直接取决于下面列出的支付牌和弃牌目标，而不是抽象的主动权。" );
     }
     if (signals.spr !== null) reasonParts.push(`有效后手对应 SPR ${signals.spr.toFixed(1)}，${signals.inPosition ? "有位置可以延后压力" : "无位置要保留过牌保护"}。`);
     reasonParts.push(`当前主频行动是 ${recommended}（约 ${topFrequency}%）；你的选择占 ${frequency}%，所以复盘重点是频率位置而不是简单贴“对/错”标签。`);
 
-    const check = street === "PREFLOP"
-      ? "①先写出对手的继续方式；②再按位置和牌型挑组合；③最后检查加注尺寸是否改变了后续 SPR。"
-      : facingBet
-        ? "①先算价格；②移除没有足够权益实现的继续牌；③最后用阻挡牌和价值/诈唬构造决定跟注或加注。"
-        : "①先比较范围与坚果；②再选小注、重注或过牌骨架；③最后问价值牌能否被更差牌支付。";
-    const question = coachPick([
-      "如果把自己的两张牌盖住，只看位置、价格和行动线，你还会选这个动作吗？",
-      "这个动作是在让更差牌付费，还是只把更好牌留在对手范围里？",
-      "哪一张转牌会让你改变计划？如果答不出来，说明下注前的跨街预演还不够。",
-      "你是在保护自己的范围，还是只是因为这手牌看起来很强？"
-    ], `${seed}-question`);
-    return { lead, reason: reasonParts.join(" "), check, question };
+    const check = `${specific.verdict} 复盘时优先核对：更差继续牌是否真的足够，以及更好牌是否会在当前尺度下实际弃掉。`;
+    const plan = facingBet
+      ? `若走 ${recommended}，下一街优先观察听牌是否完成、对手是否继续大尺度，以及你的牌是否从成牌退化成纯抓诈。`
+      : `若走 ${recommended}，被跟注后要把对手范围收窄到上面列出的对子和听牌；下一街再按完成牌、超牌和成对牌重新筛选。`;
+    return {
+      lead,
+      reason: reasonParts.join(" "),
+      caseStudy: casePrefix,
+      relative: specific.relative,
+      ahead: specific.ahead,
+      worseContinue: specific.worseContinue,
+      betterFold: specific.betterFold,
+      worseLabel: specific.worseLabel,
+      betterLabel: specific.betterLabel,
+      check,
+      plan
+    };
   }
 
   function buildDecisionAnalysis(seat, strategy, candidate, gameState) {
@@ -831,6 +1161,8 @@
     const topFrequency = Math.round((strategy.entries[0]?.frequency || 0) * 100);
     const hand = gameState.street === "PREFLOP" ? preflopHandLabel(player.hand) : postflopHandLabel(seat);
     const handFacts = heroHandFacts(gameState);
+    const recommended = strategy.entries[0]?.label || "主频行动";
+    const specific = specificRangeComparison(gameState, recommended, toCall > 0);
     const tone = actionScore(strategy, candidate).tone;
     const coach = coachReview({
       street: gameState.street,
@@ -844,6 +1176,7 @@
       chosenFrequency,
       topFrequency,
       handFacts,
+      specific,
       tone
     });
     const priceText = toCall > 0
@@ -861,6 +1194,8 @@
       knowledge: strategy.knowledgeSummary,
       sources: strategy.knowledgeSources,
       matches: strategy.knowledgeMatches,
+      caseMatches: strategy.caseMatches,
+      specific,
       coach
     };
   }
@@ -1191,16 +1526,17 @@
   function knowledgeMatchesNode(matches) {
     const section = document.createElement("div");
     section.className = "review-knowledge-hits";
-    const match = matches[0];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "review-knowledge-hit";
-    button.textContent = `知识依据：${match.title} · 查看相关条目`;
-    button.addEventListener("click", event => {
-      event.stopPropagation();
-      window.PokerKnowledgeUI?.openDocument(match.id);
+    matches.slice(0, 3).forEach(match => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "review-knowledge-hit";
+      button.textContent = `${match.kind === "case" ? "相似牌例" : "知识依据"}：${match.title} · 查看条目`;
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        window.PokerKnowledgeUI?.openDocument(match.id);
+      });
+      section.append(button);
     });
-    section.append(button);
     return section;
   }
 
@@ -1255,9 +1591,13 @@
       const details = document.createElement("div");
       details.className = "review-detail-list";
       const analysis = decision.analysis || {};
-      if (analysis.coach?.reason) details.append(reviewDetailNode("教练解释", analysis.coach.reason));
-      if (analysis.coach?.check) details.append(reviewDetailNode("下次检查", analysis.coach.check));
-      if (analysis.coach?.question) details.append(reviewDetailNode("教练会追问", analysis.coach.question));
+      if (analysis.coach?.caseStudy) details.append(reviewDetailNode("相似牌例", analysis.coach.caseStudy));
+      if (analysis.coach?.relative) details.append(reviewDetailNode("牌力位置", analysis.coach.relative));
+      if (analysis.coach?.ahead) details.append(reviewDetailNode("领先哪些牌", analysis.coach.ahead));
+      if (analysis.coach?.worseContinue) details.append(reviewDetailNode(analysis.coach.worseLabel || "更差会继续", analysis.coach.worseContinue));
+      if (analysis.coach?.betterFold) details.append(reviewDetailNode(analysis.coach.betterLabel || "更好会弃牌", analysis.coach.betterFold));
+      if (analysis.coach?.plan) details.append(reviewDetailNode("后续计划", analysis.coach.plan));
+      if (analysis.coach?.check) details.append(reviewDetailNode("复盘结论", analysis.coach.check));
       if (analysis.node) details.append(reviewDetailNode("节点", analysis.node));
       if (analysis.hand) details.append(reviewDetailNode("手牌与牌面", analysis.hand));
       if (analysis.price) details.append(reviewDetailNode("价格", analysis.price));
@@ -1358,5 +1698,11 @@
     if (event.target === el["live-review-dialog"]) el["live-review-dialog"].close();
   });
 
-  window.LivePractice = { enter, leave, newHand, _state: state, _test: { legalCandidates, strategyFor, totalPot } };
+  window.LivePractice = {
+    enter,
+    leave,
+    newHand,
+    _state: state,
+    _test: { legalCandidates, strategyFor, totalPot, specificRangeComparison, matchKnowledgeCases, postflopProfile }
+  };
 })();
