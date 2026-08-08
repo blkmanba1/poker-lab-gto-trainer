@@ -698,6 +698,50 @@
     return notes.join(" · ");
   }
 
+  function boardFacts(board) {
+    if (!board.length) return "当前还没有公共牌";
+    const ranks = board.map(card => card[0]).join("-");
+    const suits = board.reduce((counts, card) => ({ ...counts, [card[1]]: (counts[card[1]] || 0) + 1 }), {});
+    const maxSuit = Math.max(...Object.values(suits));
+    const rankCounts = board.reduce((counts, card) => ({ ...counts, [card[0]]: (counts[card[0]] || 0) + 1 }), {});
+    const paired = Object.entries(rankCounts).find(([, count]) => count >= 2)?.[0];
+    const texture = paired
+      ? `牌面 ${ranks} 已成对（${paired}）`
+      : maxSuit >= 3
+        ? `牌面 ${ranks} 三张同花，存在同花压力`
+        : maxSuit === 2
+          ? `牌面 ${ranks} 两张同花，保留同花听牌可能`
+          : `牌面 ${ranks} 彩虹面`;
+    const latest = board.length >= 4 ? `本街新增 ${displayCard(board.at(-1))}` : "翻牌三张同时发出";
+    return `${texture}；${latest}`;
+  }
+
+  function heroHandFacts(gameState) {
+    const player = gameState.players[HERO_SEAT];
+    if (!player?.hand?.length) return "你的手牌暂不可用";
+    const cards = player.hand.map(displayCard).join(" ");
+    if (gameState.street === "PREFLOP") {
+      return `你拿 ${cards}（${preflopHandLabel(player.hand)}），${positionForSeat(HERO_SEAT, gameState)} 位面对当前前序行动`;
+    }
+    const profile = postflopProfile(HERO_SEAT);
+    const board = gameState.board;
+    const boardRanks = board.map(card => rankValue(card[0]));
+    const holeRanks = player.hand.map(card => rankValue(card[0]));
+    const topBoard = Math.max(...boardRanks);
+    let made = profile.hand.name;
+    if (profile.hand.name === "Pair") {
+      if (holeRanks.includes(topBoard)) made = `顶对（${RANKS[topBoard - 2]}）`;
+      else if (holeRanks[0] === holeRanks[1] && holeRanks[0] > topBoard) made = "超对";
+      else if (holeRanks[0] === holeRanks[1]) made = "口袋对子碰到公共牌";
+      else made = "中/底对";
+    }
+    const draws = [];
+    if (profile.flushDraw) draws.push("同花听牌");
+    if (profile.straightDraw) draws.push("顺子听牌");
+    const drawText = draws.length ? `，同时有${draws.join("和")}` : "";
+    return `你拿 ${cards}，公共牌 ${board.map(displayCard).join(" ")}；当前是${made}${drawText}。${boardFacts(board)}`;
+  }
+
   function coachPick(items, seed) {
     const value = String(seed || "").split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
     return items[value % items.length];
@@ -705,7 +749,7 @@
 
   function coachReview(decisionContext) {
     const {
-      street, position, candidate, strategy, gameState, pot, toCall, price, chosenFrequency, topFrequency
+      street, position, candidate, strategy, gameState, pot, toCall, price, chosenFrequency, topFrequency, handFacts
     } = decisionContext;
     const signals = strategy.knowledgeSignals || {};
     const facingBet = toCall > 0;
@@ -726,31 +770,32 @@
     const frequency = chosenFrequency;
     const seed = `${street}-${position}-${chosen}-${signals.pairedBoard}-${signals.potOdds}`;
     let lead;
+    const factLead = `${handFacts}。`;
     if (decisionContext.tone === "good") {
       lead = coachPick([
-        `这一步你先抓住了${primary}，所以 ${chosen} 是自然的主线。`,
-        `你没有被绝对牌力带着走，而是把${primary}放在了第一顺位；这正是这节点的关键。`,
-        `${chosen} 在这里不是“背答案”，而是对${primary}做出的范围层回应。`
+        `${factLead}在这个具体牌面上，${chosen} 正好回应了${primary}。`,
+        `${factLead}先把这组牌和这张公共牌还原清楚，再看${primary}；因此 ${chosen} 是自然的主线。`,
+        `${factLead}${chosen} 不是抽象术语，而是对当前牌面与行动线的具体回应。`
       ], seed);
     } else if (decisionContext.tone === "mixed") {
       lead = coachPick([
-        `${chosen} 不是错误，但它是围绕${primary}的低频分支；默认仍让 ${recommended} 承担更多频率。`,
-        `这手牌可以保留 ${chosen}，前提是你能说清楚它如何服务于${primary}，否则回到 ${recommended}。`,
-        `你的方向没有偏离，但频率要收回来：${chosen} 约占 ${frequency}%，不能把混合分支当成常规动作。`
+        `${factLead}${chosen} 不是错误，但它是围绕${primary}的低频分支；默认仍让 ${recommended} 承担更多频率。`,
+        `${factLead}这手牌可以保留 ${chosen}，但要说清楚这张牌如何服务于${primary}，否则回到 ${recommended}。`,
+        `${factLead}方向没有完全偏离，但频率要收回来：${chosen} 约占 ${frequency}%，不能把这条混合线当成常规动作。`
       ], seed);
     } else {
       lead = coachPick([
-        `这一步真正需要纠正的是决策顺序：先处理${primary}，再谈 ${chosen}。`,
-        `你把${primary}放到了牌力直觉之后，结果让 ${chosen} 变成了一个缺少范围支撑的动作。`,
-        `${chosen} 只占当前策略的 ${frequency}%；这不是记忆题，而是${primary}没有被先还原。`
+        `${factLead}真正需要纠正的是：这组牌在这个牌面上没有先处理${primary}，所以 ${chosen} 缺少范围支撑。`,
+        `${factLead}你先按牌力直觉选了 ${chosen}，但这张公共牌改变了${primary}；应该先还原牌面，再决定动作。`,
+        `${factLead}${chosen} 只占当前策略的 ${frequency}%；问题不是记忆术语，而是没有先解释这张牌在当前牌面的作用。`
       ], seed);
     }
 
     const reasonParts = [];
     if (street === "PREFLOP") {
-      reasonParts.push(`翻前先看 ${position}、前序加注尺寸和后方未行动玩家，再决定范围是线性继续还是极化再加注。`);
+      reasonParts.push(`${handFacts} 翻前再看 ${position}、前序加注尺寸和后方未行动玩家，决定范围是线性继续还是极化再加注。`);
     } else {
-      reasonParts.push(`翻后不能沿用翻前主动权：当前要重新比较范围权益、坚果上限和这张公共牌改变了什么。`);
+      reasonParts.push(`${handFacts} 翻后不能沿用翻前主动权；要重新比较这组牌在当前公共牌上的成牌、听牌和相对坚果位置。`);
     }
     if (facingBet) {
       reasonParts.push(`你需要补 ${formatBb(toCall)}，简化盈亏平衡权益约 ${Math.round(price * 100)}%；价格只是防守起点，还要问这手牌能否实现权益。`);
@@ -785,6 +830,7 @@
     const chosenFrequency = Math.round((strategy.entries.find(entry => entry.label === candidate.label)?.frequency || 0) * 100);
     const topFrequency = Math.round((strategy.entries[0]?.frequency || 0) * 100);
     const hand = gameState.street === "PREFLOP" ? preflopHandLabel(player.hand) : postflopHandLabel(seat);
+    const handFacts = heroHandFacts(gameState);
     const tone = actionScore(strategy, candidate).tone;
     const coach = coachReview({
       street: gameState.street,
@@ -797,6 +843,7 @@
       price,
       chosenFrequency,
       topFrequency,
+      handFacts,
       tone
     });
     const priceText = toCall > 0
@@ -807,7 +854,7 @@
       : `翻后按“范围与坚果关系 → 尺度 → 价值/诈唬构造 → 阻挡牌”的顺序检查；当前简化引擎主要使用成牌、听牌和价格。`;
     return {
       node: `${activePlayers} 人仍在牌局 · 底池 ${formatBb(pot)} · 你的后手 ${formatBb(player.stack)}${spr === null ? "" : ` · SPR ${spr.toFixed(1)}`}`,
-      hand: `${player.hand.map(displayCard).join(" ")} · ${hand}${gameState.board.length ? `；${boardTexture(gameState.board)}` : ""}`,
+      hand: handFacts,
       price: priceText,
       structure: structureText,
       frequency: `你的行动在当前近似策略中占 ${chosenFrequency}%，最高频行动占 ${topFrequency}%。频率用于比较策略结构，不是精确 Solver 输出。`,
